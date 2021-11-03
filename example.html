@@ -24,18 +24,6 @@
     <improv-wifi-serial-launch-button>
       <span slot="unsupported">⚠️ Browser set-up not supported</span>
     </improv-wifi-serial-launch-button>
-    <p>Events:</p>
-    <pre id="events"></pre>
     <script src="./dist/web/serial-launch-button.js" type="module"></script>
-    <script>
-      document
-        .querySelectorAll("improv-wifi-serial-launch-button")
-        .forEach((button) =>
-          button.addEventListener("state-changed", (ev) => {
-            document.querySelector("pre").innerText +=
-              JSON.stringify(ev.detail) + "\n";
-          })
-        );
-    </script>
   </body>
 </html>
