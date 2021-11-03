@@ -1,10 +1,10 @@
 import { LitElement, html, PropertyValues, css, TemplateResult } from "lit";
 import { customElement, query, property, state } from "lit/decorators.js";
-import "@material/mwc-dialog";
-import "@material/mwc-textfield";
-import "@material/mwc-button";
-import "@material/mwc-circular-progress";
-import type { TextField } from "@material/mwc-textfield";
+import "./components/is-dialog";
+import "./components/is-textfield";
+import "./components/is-button";
+import "./components/is-circular-progress";
+import type { IsTextfield } from "./components/is-textfield";
 import {
   ImprovSerialCurrentState,
   ImprovSerialErrorState,
@@ -35,8 +35,8 @@ class SerialProvisionDialog extends LitElement {
 
   @state() private _showProvisionForm = false;
 
-  @query("mwc-textfield[name=ssid]") private _inputSSID!: TextField;
-  @query("mwc-textfield[name=password]") private _inputPassword!: TextField;
+  @query("is-textfield[name=ssid]") private _inputSSID!: IsTextfield;
+  @query("is-textfield[name=password]") private _inputPassword!: IsTextfield;
 
   protected render() {
     if (!this.port) {
@@ -78,13 +78,13 @@ class SerialProvisionDialog extends LitElement {
     }
 
     return html`
-      <mwc-dialog
+      <is-dialog
         open
         .heading=${this._client?.info?.name}
         scrimClickAction
         @closed=${this._handleClose}
         .hideActions=${hideActions}
-        >${content}</mwc-dialog
+        >${content}</is-dialog
       >
     `;
   }
@@ -93,11 +93,11 @@ class SerialProvisionDialog extends LitElement {
     return html`
       <div class="center">
         <div>
-          <mwc-circular-progress
+          <is-circular-progress
             active
             indeterminate
             density="8"
-          ></mwc-circular-progress>
+          ></is-circular-progress>
         </div>
         ${label}
       </div>
@@ -112,11 +112,11 @@ class SerialProvisionDialog extends LitElement {
       </div>
       ${showClose &&
       html`
-        <mwc-button
+        <is-button
           slot="primaryAction"
           dialogAction="ok"
           label="Close"
-        ></mwc-button>
+        ></is-button>
       `}
     `;
   }
@@ -142,31 +142,31 @@ class SerialProvisionDialog extends LitElement {
         connect to.
       </div>
       ${error ? html`<p class="error">${error}</p>` : ""}
-      <mwc-textfield label="Wi-Fi SSID" name="ssid"></mwc-textfield>
-      <mwc-textfield
+      <is-textfield label="Wi-Fi SSID" name="ssid"></is-textfield>
+      <is-textfield
         label="Wi-Fi password"
         name="password"
         type="password"
-      ></mwc-textfield>
-      <mwc-button
+      ></is-textfield>
+      <is-button
         slot="primaryAction"
         label="Save"
         @click=${this._provision}
-      ></mwc-button>
+      ></is-button>
       ${this._client!.state === ImprovSerialCurrentState.PROVISIONED
         ? html`
-            <mwc-button
+            <is-button
               slot="secondaryAction"
               label="Back"
               @click=${this._toggleShowProvisionForm}
-            ></mwc-button>
+            ></is-button>
           `
         : html`
-            <mwc-button
+            <is-button
               slot="secondaryAction"
               dialogAction="close"
               label="Cancel"
-            ></mwc-button>
+            ></is-button>
           `}
     `;
   }
@@ -184,18 +184,18 @@ class SerialProvisionDialog extends LitElement {
             </div>
           `
         : ""}
-      <mwc-button
+      <is-button
         slot="primaryAction"
         .label=${this._client!.state === ImprovSerialCurrentState.READY
           ? "Connect to Wi-Fi"
           : "Change Wi-Fi"}
         @click=${this._toggleShowProvisionForm}
-      ></mwc-button>
-      <mwc-button
+      ></is-button>
+      <is-button
         slot="secondaryAction"
         label="Close"
         dialogAction="close"
-      ></mwc-button>
+      ></is-button>
       ${this._client!.nextUrl === undefined
         ? ""
         : html`
@@ -205,7 +205,7 @@ class SerialProvisionDialog extends LitElement {
               class="has-button"
               dialogAction="ok"
             >
-              <mwc-button label="Configure Device"></mwc-button>
+              <is-button label="Configure Device"></is-button>
             </a>
           `}
     `;
@@ -280,14 +280,14 @@ class SerialProvisionDialog extends LitElement {
       --mdc-theme-primary: var(--improv-primary-color, #03a9f4);
       --mdc-theme-on-primary: var(--improv-on-primary-color, #fff);
     }
-    mwc-textfield {
+    is-textfield {
       display: block;
       margin-top: 16px;
     }
     .center {
       text-align: center;
     }
-    mwc-circular-progress {
+    is-circular-progress {
       margin-bottom: 16px;
     }
     a.has-button {
