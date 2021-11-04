@@ -10,7 +10,12 @@ import {
 import { hexFormatter, iterateReadableStream, sleep } from "./util.js";
 
 export class ImprovSerial extends EventTarget {
-  public info?: { name: string; firmware: string; version: string };
+  public info?: {
+    name: string;
+    firmware: string;
+    version: string;
+    chipFamily: string;
+  };
 
   public nextUrl: string | undefined;
 
@@ -57,15 +62,17 @@ export class ImprovSerial extends EventTarget {
       name: "Living Room Tag Reader",
       firmware: "ESPHome",
       version: "2021.10.2",
+      chipFamily: "ESP32",
     };
   }
 
   public async close() {
     await new Promise((resolve) => {
-      if (this._reader) {
-        this._reader.cancel();
-        this.addEventListener("disconnect", resolve, { once: true });
+      if (!this._reader) {
+        resolve(undefined);
       }
+      this._reader!.cancel();
+      this.addEventListener("disconnect", resolve, { once: true });
     });
   }
 
