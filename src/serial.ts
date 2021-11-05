@@ -5,6 +5,7 @@ import {
   ImprovSerialMessageType,
   ImprovSerialRPCCommand,
   Logger,
+  PortNotReady,
   SERIAL_PACKET_HEADER,
 } from "./const.js";
 import { hexFormatter, iterateReadableStream, sleep } from "./util.js";
@@ -33,6 +34,12 @@ export class ImprovSerial extends EventTarget {
 
   constructor(public port: SerialPort, public logger: Logger) {
     super();
+    if (port.readable === null) {
+      throw new Error("Port is not readable");
+    }
+    if (port.writable === null) {
+      throw new Error("Port is not writable");
+    }
   }
 
   /**
@@ -44,11 +51,14 @@ export class ImprovSerial extends EventTarget {
     this._processInput();
     // To give the input processing time to start.
     await sleep(1000);
+    if (this._reader === undefined) {
+      throw new PortNotReady();
+    }
     try {
       await new Promise(async (resolve, reject) => {
         setTimeout(
           () => reject(new Error("Improv Wi-Fi Serial not detected")),
-          5000
+          1000
         );
         await this.requestCurrentState();
         resolve(undefined);
@@ -281,7 +291,7 @@ export class ImprovSerial extends EventTarget {
     } catch (err) {
       this.logger.error("Error while reading serial port", err);
     } finally {
-      this._reader.releaseLock();
+      this._reader!.releaseLock();
       this._reader = undefined;
     }
 

@@ -49,3 +49,9 @@ export const enum ImprovSerialRPCCommand {
   SEND_WIFI_SETTINGS = 0x01,
   REQUEST_CURRENT_STATE = 0x02,
 }
+
+export class PortNotReady extends Error {
+  constructor() {
+    super("Port is not ready");
+  }
+}
