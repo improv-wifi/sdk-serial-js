@@ -69,9 +69,10 @@ const improv = new ImprovSerial(port, console);
 
 improv.addEventListener("state-changed", console.log);
 improv.addEventListener("error-changed", console.log);
-improv.addEventListener("disconnect", console.log);
 
 await improv.initialize();
+
+improv.addEventListener("disconnect", console.log);
 
 console.log({
   info: improv.info,
