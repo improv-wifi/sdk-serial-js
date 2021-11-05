@@ -34,7 +34,7 @@ The SDK will render an error when the connected device does not support Improv. 
 
 ```html
 <improv-wifi-serial-launch-button
-  learnMoreUrl="https://esphome.io/components/esp32_improv.html"
+  learnMoreUrl="https://www.esphome.io/components/improv_serial.html"
 ></improv-wifi-serial-launch-button>
 ```
 
