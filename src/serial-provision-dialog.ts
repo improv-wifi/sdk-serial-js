@@ -23,13 +23,15 @@ class SerialProvisionDialog extends LitElement {
 
   public logger: Logger = console;
 
+  public learnMoreUrl?: TemplateResult;
+
   @state() private _state: State = "CONNECTING";
 
   private _client?: ImprovSerial;
 
   @state() private _busy = false;
 
-  @state() private _error?: string;
+  @state() private _error?: string | TemplateResult;
 
   @state() private _hasProvisionsed = false;
 
@@ -251,17 +253,24 @@ class SerialProvisionDialog extends LitElement {
       this.requestUpdate();
     });
     this._client.addEventListener("error-changed", () => this.requestUpdate());
-    this._client.addEventListener("disconnect", () => {
-      this._state = "ERROR";
-      this._error = "Disconnected";
-    });
     try {
       await this._client.initialize();
     } catch (err: any) {
       this._state = "ERROR";
-      this._error = err.message;
+      this._error = this.learnMoreUrl
+        ? html`
+            Unable to detect Improv service on connected device.
+            <a href=${this.learnMoreUrl} target="_blank"
+              >Learn how to resolve this</a
+            >
+          `
+        : err.message;
       return;
     }
+    this._client.addEventListener("disconnect", () => {
+      this._state = "ERROR";
+      this._error = "Disconnected";
+    });
     if (this._client.nextUrl) {
       this.requestUpdate();
     }

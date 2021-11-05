@@ -30,6 +30,14 @@ Add the following to your website to show a button to start the provisioning pro
 
 A warning message will be rendered if the browser does not support WebBluetooth.
 
+The SDK will render an error when the connected device does not support Improv. If it is opt-in for your software, you can set a link as the `learnMoreUrl` attribute to include this link in the error message.
+
+```html
+<improv-wifi-serial-launch-button
+  learnMoreUrl="https://esphome.io/components/esp32_improv.html"
+></improv-wifi-serial-launch-button>
+```
+
 ### Attributes
 
 The following attributes are automatically added to `<improv-wifi-serial-launch-button>` and can be used for styling:
