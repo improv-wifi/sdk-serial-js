@@ -140,19 +140,19 @@ class SerialProvisionDialog extends LitElement {
 
     return html`
       <div>
-        Enter the Wi-Fi credentials of the network that you want your device to
+        Enter the credentials of the Wi-Fi network that you want your device to
         connect to.
       </div>
       ${error ? html`<p class="error">${error}</p>` : ""}
-      <is-textfield label="Wi-Fi SSID" name="ssid"></is-textfield>
+      <is-textfield label="Network Name" name="ssid"></is-textfield>
       <is-textfield
-        label="Wi-Fi password"
+        label="Password"
         name="password"
         type="password"
       ></is-textfield>
       <is-button
         slot="primaryAction"
-        label="Save"
+        label="Connect"
         @click=${this._provision}
       ></is-button>
       ${this._client!.state === ImprovSerialCurrentState.PROVISIONED
