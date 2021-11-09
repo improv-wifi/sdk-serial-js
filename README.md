@@ -1,12 +1,6 @@
-# JavaScript SDK for Improv Wi-Fi
+# JavaScript SDK for Improv Wi-Fi over Serial
 
 ## Installation
-
-You can use the JavaScript SDK by adding the following HTML to your website:
-
-```html
-<script type="module" src="https://www.improv-wifi.com/sdk-js/launch-button.js"></script>
-```
 
 If you are using a bundler and JavaScript package manager, you can install the SDK via NPM:
 
@@ -17,7 +11,7 @@ npm install --save improv-wifi-sdk
 And then import it in your code:
 
 ```
-import 'improv-wifi-sdk';
+import 'improv-wifi-serial-sdk';
 ```
 
 ## Usage
@@ -28,7 +22,7 @@ Add the following to your website to show a button to start the provisioning pro
 <improv-wifi-serial-launch-button></improv-wifi-serial-launch-button>
 ```
 
-A warning message will be rendered if the browser does not support WebBluetooth.
+A warning message will be rendered if the browser does not support WebSerial.
 
 The SDK will render an error when the connected device does not support Improv. If it is opt-in for your software, you can set a link as the `learnMoreUrl` attribute to include this link in the error message.
 
@@ -60,7 +54,7 @@ It is possible to customize the button and the message. You do this by putting y
 
 ## Browser Support
 
-This SDK requires a browser with support for WebBluetooth. Currently this is supported by Google Chrome, Microsoft Edge and other browsers based on the Blink engine.
+This SDK requires a browser with support for WebSerial. Currently this is supported by Google Chrome, Microsoft Edge and other browsers based on the Blink engine.
 
 No iOS devices are supported.
 
