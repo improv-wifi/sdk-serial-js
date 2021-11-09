@@ -27,7 +27,7 @@ class SerialProvisionDialog extends LitElement {
 
   @state() private _state: State = "CONNECTING";
 
-  private _client?: ImprovSerial;
+  @state() private _client?: ImprovSerial;
 
   @state() private _busy = false;
 
@@ -47,15 +47,15 @@ class SerialProvisionDialog extends LitElement {
     let content: TemplateResult;
     let hideActions = false;
 
-    if (!this._client || this._state === "CONNECTING") {
-      content = this._renderProgress("Connecting");
-      hideActions = true;
-    } else if (this._state === "ERROR") {
+    if (this._state === "ERROR") {
       content = this._renderMessage(
         ERROR_ICON,
         `An error occurred. ${this._error}`,
         true
       );
+    } else if (!this._client || this._state === "CONNECTING") {
+      content = this._renderProgress("Connecting");
+      hideActions = true;
     } else if (this._showProvisionForm) {
       if (this._busy) {
         content = this._renderProgress("Provisioning");
@@ -246,15 +246,15 @@ class SerialProvisionDialog extends LitElement {
   }
 
   private async _connect() {
-    this._client = new ImprovSerial(this.port!, this.logger);
-    this._client.addEventListener("state-changed", () => {
+    const client = new ImprovSerial(this.port!, this.logger);
+    client.addEventListener("state-changed", () => {
       this._state = "IMPROV-STATE";
       this._showProvisionForm = false;
       this.requestUpdate();
     });
-    this._client.addEventListener("error-changed", () => this.requestUpdate());
+    client.addEventListener("error-changed", () => this.requestUpdate());
     try {
-      await this._client.initialize();
+      await client.initialize();
     } catch (err: any) {
       this._state = "ERROR";
       this._error = this.learnMoreUrl
@@ -267,13 +267,14 @@ class SerialProvisionDialog extends LitElement {
         : err.message;
       return;
     }
-    this._client.addEventListener("disconnect", () => {
+    client.addEventListener("disconnect", () => {
       this._state = "ERROR";
       this._error = "Disconnected";
     });
-    if (this._client.nextUrl) {
+    if (client.nextUrl) {
       this.requestUpdate();
     }
+    this._client = client;
   }
 
   private async _handleClose() {
