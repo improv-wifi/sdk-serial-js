@@ -46,7 +46,7 @@ export class ImprovSerial extends EventTarget {
    * Detect Improv Serial, fetch the state and return the next URL if provisioned.
    * @returns
    */
-  public async initialize() {
+  public async initialize(): Promise<this["info"]> {
     this.logger.log("Initializing Improv Serial");
     this._processInput();
     // To give the input processing time to start.
@@ -63,17 +63,12 @@ export class ImprovSerial extends EventTarget {
         await this.requestCurrentState();
         resolve(undefined);
       });
+      await this.requestInfo();
     } catch (err) {
-      this.close();
+      await this.close();
       throw err;
     }
-    // TODO TEMP
-    this.info = {
-      name: "Living Room Tag Reader",
-      firmware: "ESPHome",
-      version: "2021.10.2",
-      chipFamily: "ESP32",
-    };
+    return this.info!;
   }
 
   public async close() {
@@ -122,6 +117,19 @@ export class ImprovSerial extends EventTarget {
 
     const data = await rpcResult!;
     this.nextUrl = data[0];
+  }
+
+  public async requestInfo() {
+    const response = await this._sendRPCWithResponse(
+      ImprovSerialRPCCommand.REQUEST_INFO,
+      new Uint8Array([])
+    );
+    this.info = {
+      firmware: response[0],
+      version: response[1],
+      name: response[3],
+      chipFamily: response[2],
+    };
   }
 
   public async provision(ssid: string, password: string) {
@@ -280,7 +288,7 @@ export class ImprovSerial extends EventTarget {
             result.push(
               String.fromCodePoint(...data.slice(idx + 1, idx + data[idx] + 1))
             );
-            idx += data[idx];
+            idx += data[idx] + 1;
           }
           this._rpcFeedback.resolve(result);
           this._rpcFeedback = undefined;
