@@ -238,7 +238,7 @@ export class ImprovSerial extends EventTarget {
         for (let i = checksumStart; i < line.length - 1; i++) {
           calculatedChecksum += line[i];
         }
-        calculatedChecksum = calculatedChecksum % 256;
+        calculatedChecksum = calculatedChecksum & 0xff;
         if (calculatedChecksum !== checksum) {
           this.logger.error(
             `Received invalid checksum ${checksum}. Expected ${calculatedChecksum}`
