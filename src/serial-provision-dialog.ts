@@ -196,7 +196,6 @@ class SerialProvisionDialog extends LitElement {
                   target="_blank"
                   href=${this._client!.nextUrl}
                   class="has-button"
-                  dialogAction="ok"
                 >
                   <is-button label="Visit Device"></is-button>
                 </a>
