@@ -337,7 +337,7 @@ export class ImprovSerial extends EventTarget {
   }
 
   /**
-   * Write packet to stream and
+   * Add header + checksum and write packet to stream
    */
   public async writePacketToStream(type: number, data: number[]) {
     const payload = new Uint8Array([
