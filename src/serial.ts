@@ -158,13 +158,15 @@ export class ImprovSerial extends EventTarget {
       command,
       data.length,
       ...data,
-      0,
+      0, // Will be checksum
+      0, // Will be newline
     ]);
-    payload[payload.length - 1] =
+    payload[payload.length - 2] =
       // Checksum is only over RPC data itself, not the header or message type
       payload
         .slice(SERIAL_PACKET_HEADER.length + 2)
         .reduce((sum, cur) => sum + cur, 0);
+    payload[payload.length - 1] = "\n".charCodeAt(0);
     this.writeToStream(payload);
   }
 
