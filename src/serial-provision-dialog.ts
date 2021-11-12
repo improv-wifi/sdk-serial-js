@@ -70,7 +70,7 @@ class SerialProvisionDialog extends LitElement {
       this._client.state === ImprovSerialCurrentState.PROVISIONED ||
       this._client.state === ImprovSerialCurrentState.READY
     ) {
-      content = this._renderImprovDashboard();
+      [content, hideActions] = this._renderImprovDashboard();
     } else {
       content = this._renderMessage(
         ERROR_ICON,
@@ -173,8 +173,9 @@ class SerialProvisionDialog extends LitElement {
     `;
   }
 
-  _renderImprovDashboard() {
-    return html`
+  _renderImprovDashboard(): [TemplateResult, boolean] {
+    const hideActions = true;
+    const content = html`
       <div class="device-info">
         Software: ${this._client!.info?.firmware}/${this._client!.info?.version}
       </div>
@@ -186,31 +187,35 @@ class SerialProvisionDialog extends LitElement {
             </div>
           `
         : ""}
-      <is-button
-        slot="primaryAction"
-        .label=${this._client!.state === ImprovSerialCurrentState.READY
-          ? "Connect to Wi-Fi"
-          : "Change Wi-Fi"}
-        @click=${this._toggleShowProvisionForm}
-      ></is-button>
-      <is-button
-        slot="secondaryAction"
-        label="Close"
-        dialogAction="close"
-      ></is-button>
-      ${this._client!.nextUrl === undefined
-        ? ""
-        : html`
-            <a
-              href=${this._client!.nextUrl}
-              slot="secondaryAction"
-              class="has-button"
-              dialogAction="ok"
-            >
-              <is-button label="Configure Device"></is-button>
-            </a>
-          `}
+      <div class="dashboard-buttons">
+        ${this._client!.nextUrl === undefined
+          ? ""
+          : html`
+              <div>
+                <a
+                  target="_blank"
+                  href=${this._client!.nextUrl}
+                  class="has-button"
+                  dialogAction="ok"
+                >
+                  <is-button label="Visit Device"></is-button>
+                </a>
+              </div>
+            `}
+        <div>
+          <is-button
+            .label=${this._client!.state === ImprovSerialCurrentState.READY
+              ? "Connect to Wi-Fi"
+              : "Change Wi-Fi"}
+            @click=${this._toggleShowProvisionForm}
+          ></is-button>
+        </div>
+        <div>
+          <is-button label="Close" dialogAction="close"></is-button>
+        </div>
+      </div>
     `;
+    return [content, hideActions];
   }
 
   private async _toggleShowProvisionForm() {
@@ -320,6 +325,13 @@ class SerialProvisionDialog extends LitElement {
       text-align: left;
       text-decoration: underline;
       cursor: pointer;
+    }
+    .dashboard-buttons {
+      margin: 16px 0 -16px -8px;
+    }
+    .dashboard-buttons div {
+      display: block;
+      margin: 4px 0;
     }
   `;
 }
