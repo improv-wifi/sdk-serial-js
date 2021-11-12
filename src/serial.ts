@@ -100,7 +100,7 @@ export class ImprovSerial extends EventTarget {
         };
         rpcResult = this._sendRPCWithResponse(
           ImprovSerialRPCCommand.REQUEST_CURRENT_STATE,
-          new Uint8Array([])
+          []
         );
         rpcResult.catch(cleanupAndReject);
       });
@@ -122,7 +122,7 @@ export class ImprovSerial extends EventTarget {
   public async requestInfo() {
     const response = await this._sendRPCWithResponse(
       ImprovSerialRPCCommand.REQUEST_INFO,
-      new Uint8Array([])
+      []
     );
     this.info = {
       firmware: response[0],
@@ -136,12 +136,12 @@ export class ImprovSerial extends EventTarget {
     const encoder = new TextEncoder();
     const ssidEncoded = encoder.encode(ssid);
     const pwEncoded = encoder.encode(password);
-    const data = new Uint8Array([
+    const data = [
       ssidEncoded.length,
       ...ssidEncoded,
       pwEncoded.length,
       ...pwEncoded,
-    ]);
+    ];
     const response = await this._sendRPCWithResponse(
       ImprovSerialRPCCommand.SEND_WIFI_SETTINGS,
       data
@@ -149,30 +149,17 @@ export class ImprovSerial extends EventTarget {
     this.nextUrl = response[0];
   }
 
-  // https://github.com/improv-wifi/sdk-js/blob/main/src/provision-dialog.ts#L360
-  private _sendRPC(command: ImprovSerialRPCCommand, data: Uint8Array) {
-    const payload = new Uint8Array([
-      ...SERIAL_PACKET_HEADER,
-      ImprovSerialMessageType.RPC,
-      3 + data.length,
+  private _sendRPC(command: ImprovSerialRPCCommand, data: number[]) {
+    this.writePacketToStream(ImprovSerialMessageType.RPC, [
       command,
       data.length,
       ...data,
-      0, // Will be checksum
-      0, // Will be newline
     ]);
-    payload[payload.length - 2] =
-      // Checksum is only over RPC data itself, not the header or message type
-      payload
-        .slice(SERIAL_PACKET_HEADER.length + 2)
-        .reduce((sum, cur) => sum + cur, 0);
-    payload[payload.length - 1] = "\n".charCodeAt(0);
-    this.writeToStream(payload);
   }
 
   private async _sendRPCWithResponse(
     command: ImprovSerialRPCCommand,
-    data: Uint8Array
+    data: number[]
   ) {
     // Commands that receive feedback will finish when either
     // the state changes or the error code becomes not 0.
@@ -197,7 +184,9 @@ export class ImprovSerial extends EventTarget {
 
     try {
       let line: number[] = [];
+      // undefined = not sure if improv packet
       let isImprov: boolean | undefined;
+      // length of improv bytes that we expect
       let improvLength = 0;
 
       while (true) {
@@ -218,12 +207,11 @@ export class ImprovSerial extends EventTarget {
           }
 
           if (isImprov === true) {
+            line.push(byte);
             if (line.length === improvLength) {
               this._handleIncomingPacket(line);
               isImprov = undefined;
               line = [];
-            } else {
-              line.push(byte);
             }
             continue;
           }
@@ -245,15 +233,12 @@ export class ImprovSerial extends EventTarget {
             line = [];
             continue;
           }
-
-          const packetType = line[7];
+          // Format:
+          // I M P R O V <VERSION> <TYPE> <LENGTH> <DATA> <CHECKSUM>
+          // Once we have 9 bytes, we can check if it's an improv packet
+          // and extract how much more we need to fetch.
           const packetLength = line[8];
-          const checksumOffset =
-            packetType === ImprovSerialMessageType.RPC ||
-            packetType === ImprovSerialMessageType.RPC_RESULT
-              ? 0
-              : 1;
-          improvLength = 9 + packetLength + checksumOffset; // header + packet length + checksum
+          improvLength = 9 + packetLength + 1; // header + data length + checksum
         }
       }
     } catch (err) {
@@ -286,27 +271,16 @@ export class ImprovSerial extends EventTarget {
       return;
     }
 
-    // RPC/Result have their own checksum that is just for their data
-    let checksum: number;
-    let checksumStart: number;
-    if (
-      packetType === ImprovSerialMessageType.RPC ||
-      packetType === ImprovSerialMessageType.RPC_RESULT
-    ) {
-      checksum = data[data.length - 1];
-      checksumStart = SERIAL_PACKET_HEADER.length + 2;
-    } else {
-      checksum = payload[3 + packetLength];
-      checksumStart = 0;
-    }
+    // Verify checksum
+    let packetChecksum = payload[3 + packetLength];
     let calculatedChecksum = 0;
-    for (let i = checksumStart; i < line.length - 1; i++) {
+    for (let i = 0; i < line.length - 1; i++) {
       calculatedChecksum += line[i];
     }
     calculatedChecksum = calculatedChecksum & 0xff;
-    if (calculatedChecksum !== checksum) {
+    if (calculatedChecksum !== packetChecksum) {
       this.logger.error(
-        `Received invalid checksum ${checksum}. Expected ${calculatedChecksum}`
+        `Received invalid checksum ${packetChecksum}. Expected ${calculatedChecksum}`
       );
       return;
     }
@@ -362,10 +336,31 @@ export class ImprovSerial extends EventTarget {
     }
   }
 
-  public async writeToStream(data: Uint8Array) {
-    this.logger.debug("Writing to stream:", hexFormatter(new Array(...data)));
+  /**
+   * Write packet to stream and
+   */
+  public async writePacketToStream(type: number, data: number[]) {
+    const payload = new Uint8Array([
+      ...SERIAL_PACKET_HEADER,
+      type,
+      data.length,
+      ...data,
+      0, // Will be checksum
+      0, // Will be newline
+    ]);
+    payload[payload.length - 2] =
+      // Checksum is only over RPC data itself, not the header or message type
+      payload
+        .slice(SERIAL_PACKET_HEADER.length + 2)
+        .reduce((sum, cur) => sum + cur, 0);
+    payload[payload.length - 1] = 10; // Newline
+
+    this.logger.debug(
+      "Writing to stream:",
+      hexFormatter(new Array(...payload))
+    );
     const writer = this.port.writable!.getWriter();
-    await writer.write(data);
+    await writer.write(payload);
     try {
       writer.releaseLock();
     } catch (err) {
