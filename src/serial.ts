@@ -8,7 +8,7 @@ import {
   PortNotReady,
   SERIAL_PACKET_HEADER,
 } from "./const.js";
-import { hexFormatter, iterateReadableStream, sleep } from "./util.js";
+import { hexFormatter, sleep } from "./util.js";
 
 export class ImprovSerial extends EventTarget {
   public info?: {
@@ -196,106 +196,64 @@ export class ImprovSerial extends EventTarget {
     this._reader = this.port.readable!.getReader();
 
     try {
-      for await (const line of iterateReadableStream(this._reader)) {
-        if (
-          line.length < 6 ||
-          String.fromCharCode(...line.slice(0, 6)) !== "IMPROV"
-        ) {
-          // console.debug("Ignoring line", String.fromCharCode(...line));
+      let line: number[] = [];
+      let isImprov: boolean | undefined;
+      let improvLength = 0;
+
+      while (true) {
+        const { value, done } = await this._reader.read();
+        if (done) {
+          break;
+        }
+        if (!value || value.length === 0) {
           continue;
         }
-
-        const payload = line.slice(6);
-        const version = payload[0];
-        const packetType = payload[1];
-        const packetLength = payload[2];
-        const data = payload.slice(3, 3 + packetLength);
-
-        this.logger.debug("PROCESS", {
-          version,
-          packetType,
-          packetLength,
-          data: hexFormatter(data),
-        });
-
-        if (version !== 1) {
-          this.logger.error("Received unsupported version", version);
-          continue;
-        }
-
-        // RPC/Result have their own checksum that is just for their data
-        let checksum: number;
-        let checksumStart: number;
-        if (
-          packetType === ImprovSerialMessageType.RPC ||
-          packetType === ImprovSerialMessageType.RPC_RESULT
-        ) {
-          checksum = data[data.length - 1];
-          checksumStart = SERIAL_PACKET_HEADER.length + 2;
-        } else {
-          checksum = payload[3 + packetLength];
-          checksumStart = 0;
-        }
-        let calculatedChecksum = 0;
-        for (let i = checksumStart; i < line.length - 1; i++) {
-          calculatedChecksum += line[i];
-        }
-        calculatedChecksum = calculatedChecksum & 0xff;
-        if (calculatedChecksum !== checksum) {
-          this.logger.error(
-            `Received invalid checksum ${checksum}. Expected ${calculatedChecksum}`
-          );
-          continue;
-        }
-
-        if (packetType === ImprovSerialMessageType.CURRENT_STATE) {
-          this.state = data[0];
-          this.dispatchEvent(
-            new CustomEvent("state-changed", {
-              detail: this.state,
-            })
-          );
-        } else if (packetType === ImprovSerialMessageType.ERROR_STATE) {
-          this.error = data[0];
-          if (data[0] > 0 && this._rpcFeedback) {
-            this._rpcFeedback.reject(
-              ERROR_MSGS[data[0]] || `UNKNOWN_ERROR (${data[0]})`
-            );
-            this._rpcFeedback = undefined;
-          }
-          this.dispatchEvent(
-            new CustomEvent("error-changed", {
-              detail: this.error,
-            })
-          );
-        } else if (packetType === ImprovSerialMessageType.RPC_RESULT) {
-          if (!this._rpcFeedback) {
-            this.logger.error("Received result while not waiting for one");
-            continue;
-          }
-          const rpcCommand = data[0];
-
-          if (rpcCommand !== this._rpcFeedback.command) {
-            this.logger.error(
-              `Received result for command ${rpcCommand} but expected ${this._rpcFeedback.command}`
-            );
+        for (const byte of value) {
+          if (isImprov === false) {
+            // When it wasn't an improv line, discard everything unti we find new line char
+            if (byte === 10) {
+              isImprov = undefined;
+            }
             continue;
           }
 
-          // Chop off rpc command and checksum
-          const result: string[] = [];
-          const totalLength = data[1];
-          let idx = 2;
-          while (idx < 2 + totalLength) {
-            result.push(
-              String.fromCodePoint(...data.slice(idx + 1, idx + data[idx] + 1))
-            );
-            idx += data[idx] + 1;
+          if (isImprov === true) {
+            if (line.length === improvLength) {
+              this._handleIncomingPacket(line);
+              isImprov = undefined;
+              line = [];
+            } else {
+              line.push(byte);
+            }
+            continue;
           }
-          this._rpcFeedback.resolve(result);
-          this._rpcFeedback = undefined;
-        } else {
-          this.logger.error("Unable to handle packet", payload);
+
+          if (byte === 10) {
+            line = [];
+            continue;
+          }
+
+          line.push(byte);
+
+          if (line.length !== 9) {
+            continue;
+          }
+
+          // Check if it's improv
+          isImprov = String.fromCharCode(...line.slice(0, 6)) === "IMPROV";
+          if (!isImprov) {
+            line = [];
+            continue;
+          }
+
+          const packetType = line[7];
+          const packetLength = line[8];
+          const checksumOffset =
+            packetType === ImprovSerialMessageType.RPC ||
+            packetType === ImprovSerialMessageType.RPC_RESULT
+              ? 0
+              : 1;
+          improvLength = 9 + packetLength + checksumOffset; // header + packet length + checksum
         }
       }
     } catch (err) {
@@ -307,6 +265,101 @@ export class ImprovSerial extends EventTarget {
 
     this.logger.debug("Finished read loop");
     this.dispatchEvent(new Event("disconnect"));
+  }
+
+  private _handleIncomingPacket(line: number[]) {
+    const payload = line.slice(6);
+    const version = payload[0];
+    const packetType = payload[1];
+    const packetLength = payload[2];
+    const data = payload.slice(3, 3 + packetLength);
+
+    this.logger.debug("PROCESS", {
+      version,
+      packetType,
+      packetLength,
+      data: hexFormatter(data),
+    });
+
+    if (version !== 1) {
+      this.logger.error("Received unsupported version", version);
+      return;
+    }
+
+    // RPC/Result have their own checksum that is just for their data
+    let checksum: number;
+    let checksumStart: number;
+    if (
+      packetType === ImprovSerialMessageType.RPC ||
+      packetType === ImprovSerialMessageType.RPC_RESULT
+    ) {
+      checksum = data[data.length - 1];
+      checksumStart = SERIAL_PACKET_HEADER.length + 2;
+    } else {
+      checksum = payload[3 + packetLength];
+      checksumStart = 0;
+    }
+    let calculatedChecksum = 0;
+    for (let i = checksumStart; i < line.length - 1; i++) {
+      calculatedChecksum += line[i];
+    }
+    calculatedChecksum = calculatedChecksum & 0xff;
+    if (calculatedChecksum !== checksum) {
+      this.logger.error(
+        `Received invalid checksum ${checksum}. Expected ${calculatedChecksum}`
+      );
+      return;
+    }
+
+    if (packetType === ImprovSerialMessageType.CURRENT_STATE) {
+      this.state = data[0];
+      this.dispatchEvent(
+        new CustomEvent("state-changed", {
+          detail: this.state,
+        })
+      );
+    } else if (packetType === ImprovSerialMessageType.ERROR_STATE) {
+      this.error = data[0];
+      if (data[0] > 0 && this._rpcFeedback) {
+        this._rpcFeedback.reject(
+          ERROR_MSGS[data[0]] || `UNKNOWN_ERROR (${data[0]})`
+        );
+        this._rpcFeedback = undefined;
+      }
+      this.dispatchEvent(
+        new CustomEvent("error-changed", {
+          detail: this.error,
+        })
+      );
+    } else if (packetType === ImprovSerialMessageType.RPC_RESULT) {
+      if (!this._rpcFeedback) {
+        this.logger.error("Received result while not waiting for one");
+        return;
+      }
+      const rpcCommand = data[0];
+
+      if (rpcCommand !== this._rpcFeedback.command) {
+        this.logger.error(
+          `Received result for command ${rpcCommand} but expected ${this._rpcFeedback.command}`
+        );
+        return;
+      }
+
+      // Chop off rpc command and checksum
+      const result: string[] = [];
+      const totalLength = data[1];
+      let idx = 2;
+      while (idx < 2 + totalLength) {
+        result.push(
+          String.fromCodePoint(...data.slice(idx + 1, idx + data[idx] + 1))
+        );
+        idx += data[idx] + 1;
+      }
+      this._rpcFeedback.resolve(result);
+      this._rpcFeedback = undefined;
+    } else {
+      this.logger.error("Unable to handle packet", payload);
+    }
   }
 
   public async writeToStream(data: Uint8Array) {

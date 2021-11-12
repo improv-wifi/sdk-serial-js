@@ -33,30 +33,3 @@ export const toHex = (value: number, size = 2) => {
 
 export const sleep = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms));
-
-export const iterateReadableStream = (
-  stream: ReadableStreamDefaultReader<Uint8Array>
-): AsyncIterable<Uint8Array> => {
-  return {
-    async *[Symbol.asyncIterator]() {
-      let line: number[] = [];
-      while (true) {
-        const { value, done } = await stream.read();
-        if (done) {
-          break;
-        }
-        if (!value || value.length === 0) {
-          continue;
-        }
-        for (const byte of value) {
-          if (byte === 0x0a) {
-            yield new Uint8Array(line);
-            line = [];
-          } else {
-            line.push(byte);
-          }
-        }
-      }
-    },
-  };
-};
