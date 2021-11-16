@@ -44,9 +44,9 @@ export class ImprovSerial extends EventTarget {
 
   /**
    * Detect Improv Serial, fetch the state and return the next URL if provisioned.
-   * @returns
+   * @param timeout Timeout in ms to wait for the device to respond. Default to 1000ms.
    */
-  public async initialize(): Promise<this["info"]> {
+  public async initialize(timeout = 1000): Promise<this["info"]> {
     this.logger.log("Initializing Improv Serial");
     this._processInput();
     // To give the input processing time to start.
@@ -58,7 +58,7 @@ export class ImprovSerial extends EventTarget {
       await new Promise(async (resolve, reject) => {
         setTimeout(
           () => reject(new Error("Improv Wi-Fi Serial not detected")),
-          1000
+          timeout
         );
         await this.requestCurrentState();
         resolve(undefined);
