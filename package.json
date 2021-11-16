@@ -1,6 +1,6 @@
 {
   "name": "improv-wifi-serial-sdk",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Improv Wi-Fi Serial SDK for the browser",
   "main": "dist/serial-launch-button.js",
   "repository": "https://github.com/improv-wifi/sdk-serial-js",
