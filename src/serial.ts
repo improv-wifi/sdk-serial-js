@@ -32,6 +32,13 @@ export class ImprovSerial extends EventTarget {
     reject: (err: ImprovSerialErrorState) => void;
   };
 
+  private _rpcMultiFeedback?: {
+    command: ImprovSerialRPCCommand;
+    resolve: (data: string[][]) => void;
+    reject: (err: ImprovSerialErrorState) => void;
+    receivedData: string[][];
+  };
+
   constructor(public port: SerialPort, public logger: Logger) {
     super();
     if (port.readable === null) {
@@ -149,6 +156,13 @@ export class ImprovSerial extends EventTarget {
     this.nextUrl = response[0];
   }
 
+  public async scan() {
+    return this._sendRPCWithMultipleResponses(
+      ImprovSerialRPCCommand.REQUEST_WIFI_NETWORKS,
+      [],
+    );
+  }
+
   private _sendRPC(command: ImprovSerialRPCCommand, data: number[]) {
     this.writePacketToStream(ImprovSerialMessageType.RPC, [
       command,
@@ -171,6 +185,27 @@ export class ImprovSerial extends EventTarget {
 
     return await new Promise<string[]>((resolve, reject) => {
       this._rpcFeedback = { command, resolve, reject };
+      this._sendRPC(command, data);
+    })
+  }
+
+  private async _sendRPCWithMultipleResponses(
+    command: ImprovSerialRPCCommand,
+    data: number[],
+  ) {
+    // Commands that receive multiple feedbacks will finish when either
+    // the state changes or the error code becomes not 0.
+    if (this._rpcFeedback) {
+      throw new Error('Only 1 RPC command that requires feedback can be active');
+    }
+
+    return await new Promise<string[][]>((resolve, reject) => {
+      this._rpcMultiFeedback = {
+        command,
+        resolve,
+        reject,
+        receivedData: [],
+      };
       this._sendRPC(command, data);
     });
   }
@@ -306,15 +341,18 @@ export class ImprovSerial extends EventTarget {
         })
       );
     } else if (packetType === ImprovSerialMessageType.RPC_RESULT) {
-      if (!this._rpcFeedback) {
+      if (!this._rpcFeedback && !this._rpcMultiFeedback) {
         this.logger.error("Received result while not waiting for one");
         return;
       }
       const rpcCommand = data[0];
 
-      if (rpcCommand !== this._rpcFeedback.command) {
+      const expectedCommand =
+        this._rpcFeedback?.command || this._rpcMultiFeedback?.command;
+
+      if (rpcCommand !== expectedCommand) {
         this.logger.error(
-          `Received result for command ${rpcCommand} but expected ${this._rpcFeedback.command}`
+          `Received result for command ${rpcCommand} but expected ${expectedCommand}`,
         );
         return;
       }
@@ -329,8 +367,17 @@ export class ImprovSerial extends EventTarget {
         );
         idx += data[idx] + 1;
       }
-      this._rpcFeedback.resolve(result);
-      this._rpcFeedback = undefined;
+      if (this._rpcFeedback) {
+        this._rpcFeedback.resolve(result);
+        this._rpcFeedback = undefined;
+      } else if (this._rpcMultiFeedback) {
+        if (result.length > 0) {
+          this._rpcMultiFeedback.receivedData.push(result);
+        } else {
+          this._rpcMultiFeedback.resolve(this._rpcMultiFeedback.receivedData);
+          this._rpcMultiFeedback = undefined;
+        }
+      }
     } else {
       this.logger.error("Unable to handle packet", payload);
     }
