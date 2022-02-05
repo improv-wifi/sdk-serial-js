@@ -10,6 +10,26 @@ import {
 } from "./const.js";
 import { hexFormatter, sleep } from "./util.js";
 
+interface FeedbackBase {
+  command: ImprovSerialRPCCommand;
+  reject: (err: ImprovSerialErrorState) => void;
+}
+
+interface FeedbackSinglePacket extends FeedbackBase {
+  resolve: (data: string[]) => void;
+}
+
+interface FeedbackMultiplePackets extends FeedbackBase {
+  resolve: (data: string[][]) => void;
+  receivedData: string[][];
+}
+
+export interface Ssid {
+  name: string;
+  rssi: number;
+  secured: boolean;
+}
+
 export class ImprovSerial extends EventTarget {
   public info?: {
     name: string;
@@ -26,11 +46,7 @@ export class ImprovSerial extends EventTarget {
 
   private _reader?: ReadableStreamReader<Uint8Array>;
 
-  private _rpcFeedback?: {
-    command: ImprovSerialRPCCommand;
-    resolve: (data: string[]) => void;
-    reject: (err: ImprovSerialErrorState) => void;
-  };
+  private _rpcFeedback?: FeedbackSinglePacket | FeedbackMultiplePackets;
 
   constructor(public port: SerialPort, public logger: Logger) {
     super();
@@ -149,6 +165,18 @@ export class ImprovSerial extends EventTarget {
     this.nextUrl = response[0];
   }
 
+  public async scan() {
+    const ssids = await this._sendRPCWithMultipleResponses(
+      ImprovSerialRPCCommand.REQUEST_WIFI_NETWORKS,
+      []
+    );
+    return ssids.map(([name, rssi, secured]) => ({
+      name,
+      rssi: parseInt(rssi),
+      secured: secured === "YES",
+    }));
+  }
+
   private _sendRPC(command: ImprovSerialRPCCommand, data: number[]) {
     this.writePacketToStream(ImprovSerialMessageType.RPC, [
       command,
@@ -171,6 +199,29 @@ export class ImprovSerial extends EventTarget {
 
     return await new Promise<string[]>((resolve, reject) => {
       this._rpcFeedback = { command, resolve, reject };
+      this._sendRPC(command, data);
+    });
+  }
+
+  private async _sendRPCWithMultipleResponses(
+    command: ImprovSerialRPCCommand,
+    data: number[]
+  ) {
+    // Commands that receive multiple feedbacks will finish when either
+    // the state changes or the error code becomes not 0.
+    if (this._rpcFeedback) {
+      throw new Error(
+        "Only 1 RPC command that requires feedback can be active"
+      );
+    }
+
+    return await new Promise<string[][]>((resolve, reject) => {
+      this._rpcFeedback = {
+        command,
+        resolve,
+        reject,
+        receivedData: [],
+      };
       this._sendRPC(command, data);
     });
   }
@@ -329,8 +380,18 @@ export class ImprovSerial extends EventTarget {
         );
         idx += data[idx] + 1;
       }
-      this._rpcFeedback.resolve(result);
-      this._rpcFeedback = undefined;
+      if ("receivedData" in this._rpcFeedback) {
+        if (result.length > 0) {
+          this._rpcFeedback.receivedData.push(result);
+        } else {
+          // Result of 0 means we're done.
+          this._rpcFeedback.resolve(this._rpcFeedback.receivedData);
+          this._rpcFeedback = undefined;
+        }
+      } else {
+        this._rpcFeedback.resolve(result);
+        this._rpcFeedback = undefined;
+      }
     } else {
       this.logger.error("Unable to handle packet", payload);
     }
