@@ -10,6 +10,26 @@ import {
 } from "./const.js";
 import { hexFormatter, sleep } from "./util.js";
 
+interface FeedbackBase {
+  command: ImprovSerialRPCCommand;
+  reject: (err: ImprovSerialErrorState) => void;
+}
+
+interface FeedbackSinglePacket extends FeedbackBase {
+  resolve: (data: string[]) => void;
+}
+
+interface FeedbackMultiplePackets extends FeedbackBase {
+  resolve: (data: string[][]) => void;
+  receivedData: string[][];
+}
+
+export interface Ssid {
+  name: string;
+  rssi: number;
+  secured: boolean;
+}
+
 export class ImprovSerial extends EventTarget {
   public info?: {
     name: string;
@@ -26,18 +46,7 @@ export class ImprovSerial extends EventTarget {
 
   private _reader?: ReadableStreamReader<Uint8Array>;
 
-  private _rpcFeedback?: {
-    command: ImprovSerialRPCCommand;
-    resolve: (data: string[]) => void;
-    reject: (err: ImprovSerialErrorState) => void;
-  };
-
-  private _rpcMultiFeedback?: {
-    command: ImprovSerialRPCCommand;
-    resolve: (data: string[][]) => void;
-    reject: (err: ImprovSerialErrorState) => void;
-    receivedData: string[][];
-  };
+  private _rpcFeedback?: FeedbackSinglePacket | FeedbackMultiplePackets;
 
   constructor(public port: SerialPort, public logger: Logger) {
     super();
@@ -157,10 +166,15 @@ export class ImprovSerial extends EventTarget {
   }
 
   public async scan() {
-    return this._sendRPCWithMultipleResponses(
+    const ssids = await this._sendRPCWithMultipleResponses(
       ImprovSerialRPCCommand.REQUEST_WIFI_NETWORKS,
-      [],
+      []
     );
+    return ssids.map(([name, rssi, secured]) => ({
+      name,
+      rssi: parseInt(rssi),
+      secured: secured === "YES",
+    }));
   }
 
   private _sendRPC(command: ImprovSerialRPCCommand, data: number[]) {
@@ -186,21 +200,23 @@ export class ImprovSerial extends EventTarget {
     return await new Promise<string[]>((resolve, reject) => {
       this._rpcFeedback = { command, resolve, reject };
       this._sendRPC(command, data);
-    })
+    });
   }
 
   private async _sendRPCWithMultipleResponses(
     command: ImprovSerialRPCCommand,
-    data: number[],
+    data: number[]
   ) {
     // Commands that receive multiple feedbacks will finish when either
     // the state changes or the error code becomes not 0.
     if (this._rpcFeedback) {
-      throw new Error('Only 1 RPC command that requires feedback can be active');
+      throw new Error(
+        "Only 1 RPC command that requires feedback can be active"
+      );
     }
 
     return await new Promise<string[][]>((resolve, reject) => {
-      this._rpcMultiFeedback = {
+      this._rpcFeedback = {
         command,
         resolve,
         reject,
@@ -341,18 +357,15 @@ export class ImprovSerial extends EventTarget {
         })
       );
     } else if (packetType === ImprovSerialMessageType.RPC_RESULT) {
-      if (!this._rpcFeedback && !this._rpcMultiFeedback) {
+      if (!this._rpcFeedback) {
         this.logger.error("Received result while not waiting for one");
         return;
       }
       const rpcCommand = data[0];
 
-      const expectedCommand =
-        this._rpcFeedback?.command || this._rpcMultiFeedback?.command;
-
-      if (rpcCommand !== expectedCommand) {
+      if (rpcCommand !== this._rpcFeedback.command) {
         this.logger.error(
-          `Received result for command ${rpcCommand} but expected ${expectedCommand}`,
+          `Received result for command ${rpcCommand} but expected ${this._rpcFeedback.command}`
         );
         return;
       }
@@ -367,16 +380,17 @@ export class ImprovSerial extends EventTarget {
         );
         idx += data[idx] + 1;
       }
-      if (this._rpcFeedback) {
+      if ("receivedData" in this._rpcFeedback) {
+        if (result.length > 0) {
+          this._rpcFeedback.receivedData.push(result);
+        } else {
+          // Result of 0 means we're done.
+          this._rpcFeedback.resolve(this._rpcFeedback.receivedData);
+          this._rpcFeedback = undefined;
+        }
+      } else {
         this._rpcFeedback.resolve(result);
         this._rpcFeedback = undefined;
-      } else if (this._rpcMultiFeedback) {
-        if (result.length > 0) {
-          this._rpcMultiFeedback.receivedData.push(result);
-        } else {
-          this._rpcMultiFeedback.resolve(this._rpcMultiFeedback.receivedData);
-          this._rpcMultiFeedback = undefined;
-        }
       }
     } else {
       this.logger.error("Unable to handle packet", payload);
