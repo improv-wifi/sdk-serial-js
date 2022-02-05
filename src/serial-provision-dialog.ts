@@ -187,8 +187,8 @@ class SerialProvisionDialog extends LitElement {
                   </is-list-item>
                 `
               )}
-              <is-list-item .selected=${this._selectedSsid === -1}>
-                Join Other
+              <is-list-item .selected=${this._selectedSsid === -1} value="-1">
+                Join other…
               </is-list-item>
             </is-select>
           `
@@ -415,6 +415,9 @@ class SerialProvisionDialog extends LitElement {
       text-align: left;
       text-decoration: underline;
       cursor: pointer;
+    }
+    is-list-item[value="-1"] {
+      border-top: 1px solid #ccc;
     }
     .dashboard-buttons {
       margin: 16px 0 -16px -8px;
