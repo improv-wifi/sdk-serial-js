@@ -286,16 +286,19 @@ class SerialProvisionDialog extends LitElement {
   }
 
   private async _provision() {
-    this._hasProvisioned = true;
     this._busy = true;
     try {
-      // No need to do error handling because we listen for `error-changed` events
       await this._client!.provision(
         this._selectedSsid === -1
           ? this._inputSSID.value
           : this._ssids![this._selectedSsid].name,
         this._inputPassword.value
       );
+      this._hasProvisioned = true;
+      this._showProvisionForm = false;
+    } catch (err) {
+      // No need to do error handling because we listen for `error-changed` events
+      console.log(err);
     } finally {
       this._busy = false;
     }
@@ -343,7 +346,6 @@ class SerialProvisionDialog extends LitElement {
     const client = new ImprovSerial(this.port!, this.logger);
     client.addEventListener("state-changed", () => {
       this._state = "IMPROV-STATE";
-      this._showProvisionForm = false;
       this.requestUpdate();
     });
     client.addEventListener("error-changed", () => this.requestUpdate());
