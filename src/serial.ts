@@ -165,16 +165,20 @@ export class ImprovSerial extends EventTarget {
     this.nextUrl = response[0];
   }
 
-  public async scan() {
-    const ssids = await this._sendRPCWithMultipleResponses(
+  public async scan(): Promise<Ssid[]> {
+    const results = await this._sendRPCWithMultipleResponses(
       ImprovSerialRPCCommand.REQUEST_WIFI_NETWORKS,
       []
     );
-    return ssids.map(([name, rssi, secured]) => ({
+    const ssids = results.map(([name, rssi, secured]) => ({
       name,
       rssi: parseInt(rssi),
       secured: secured === "YES",
     }));
+    ssids.sort((a, b) =>
+      a.name.toLocaleLowerCase().localeCompare(b.name.toLocaleLowerCase())
+    );
+    return ssids;
   }
 
   private _sendRPC(command: ImprovSerialRPCCommand, data: number[]) {
