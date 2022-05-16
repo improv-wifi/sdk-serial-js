@@ -8,7 +8,8 @@ import {
   PortNotReady,
   SERIAL_PACKET_HEADER,
 } from "./const.js";
-import { hexFormatter, sleep } from "./util.js";
+import { sleep } from "./util/sleep";
+import { hexFormatter } from "./util/hex-formatter";
 
 interface FeedbackBase {
   command: ImprovSerialRPCCommand;
@@ -431,5 +432,3 @@ export class ImprovSerial extends EventTarget {
     }
   }
 }
-
-(window as any).ImprovSerial = ImprovSerial;
