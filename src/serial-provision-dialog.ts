@@ -14,7 +14,7 @@ import {
   State,
 } from "./const.js";
 import { ImprovSerial, Ssid } from "./serial.js";
-import { fireEvent } from "./util.js";
+import { fireEvent } from "./util/fire-event";
 import { IsSelect } from "./components/is-select";
 
 const ERROR_ICON = "⚠️";
