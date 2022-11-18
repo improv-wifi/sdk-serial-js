@@ -24,6 +24,8 @@ const OK_ICON = "🎉";
 class SerialProvisionDialog extends LitElement {
   @property() public port?: SerialPort;
 
+  @property()  public timeout=1000;
+
   public logger: Logger = console;
 
   public learnMoreUrl?: TemplateResult;
@@ -350,7 +352,7 @@ class SerialProvisionDialog extends LitElement {
     });
     client.addEventListener("error-changed", () => this.requestUpdate());
     try {
-      await client.initialize();
+      await client.initialize(this.timeout);
     } catch (err: any) {
       this._state = "ERROR";
       this._error = this.learnMoreUrl
