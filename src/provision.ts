@@ -17,18 +17,10 @@ export const startProvisioning = async (button: SerialLaunchButton) => {
     return;
   }
   let timeout: string | null ;
-<<<<<<< HEAD
   if((timeout = button.getAttribute('timeout')) == null){
-=======
-  try {
-    if((timeout = button.getAttribute('timeout')) == null){
-      timeout = '1000';
-    }
-    
-  } catch (error) {
->>>>>>> main
     timeout = '1000';
   }
+
   await port.open({ baudRate: 115200 });
 
   const el = document.createElement("improv-wifi-serial-provision-dialog");
