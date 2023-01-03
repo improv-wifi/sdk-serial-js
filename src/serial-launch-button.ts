@@ -83,9 +83,7 @@ export class SerialLaunchButton extends HTMLElement {
       "replaceSync" in CSSStyleSheet.prototype
     ) {
       const sheet = new CSSStyleSheet();
-      // @ts-expect-error
       sheet.replaceSync(SerialLaunchButton.style);
-      // @ts-expect-error
       this.renderRoot.adoptedStyleSheets = [sheet];
     } else {
       const styleSheet = document.createElement("style");

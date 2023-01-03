@@ -1,5 +1,5 @@
-import { nodeResolve } from "@rollup/plugin-node-resolve";
-import { terser } from "rollup-plugin-terser";
+import nodeResolve from "@rollup/plugin-node-resolve";
+import terser from "@rollup/plugin-terser";
 
 const config = {
   input: "dist/serial-launch-button.js",
@@ -16,7 +16,7 @@ if (process.env.NODE_ENV === "production") {
     terser({
       ecma: 2019,
       toplevel: true,
-      output: {
+      format: {
         comments: false,
       },
     })
