@@ -1,6 +1,14 @@
-import { LitElement, html, PropertyValues, css, TemplateResult } from "lit";
+import {
+  LitElement,
+  html,
+  PropertyValues,
+  css,
+  TemplateResult,
+  svg,
+} from "lit";
 import { customElement, query, property, state } from "lit/decorators.js";
 import "./components/is-dialog";
+import "./components/is-icon-button";
 import "./components/is-textfield";
 import "./components/is-button";
 import "./components/is-circular-progress";
@@ -19,6 +27,14 @@ import { IsSelect } from "./components/is-select";
 
 const ERROR_ICON = "⚠️";
 const OK_ICON = "🎉";
+const refreshIcon = svg`
+  <svg viewBox="0 0 24 24">
+    <path
+      fill="currentColor"
+      d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"
+    />
+  </svg>
+`;
 
 @customElement("improv-wifi-serial-provision-dialog")
 class SerialProvisionDialog extends LitElement {
@@ -40,7 +56,7 @@ class SerialProvisionDialog extends LitElement {
 
   @state() private _showProvisionForm = false;
 
-  @state() private _selectedSsid = 0;
+  @state() private _selectedSsid: string | null = null;
 
   // undefined = not loaded
   // null = not available
@@ -48,7 +64,7 @@ class SerialProvisionDialog extends LitElement {
 
   @query("is-select") private _selectSSID!: IsSelect;
   @query("is-textfield[name=ssid]") private _inputSSID!: IsTextfield;
-  @query("is-textfield[name=password]") private _inputPassword!: IsTextfield;
+  @query("is-textfield[name=password]") private _inputPassword?: IsTextfield;
 
   protected render() {
     if (!this.port) {
@@ -163,6 +179,10 @@ class SerialProvisionDialog extends LitElement {
         error = `Unknown error (${this._client!.error})`;
     }
 
+    const selectedSsid = this._ssids?.find(
+      (info) => info.name === this._selectedSsid
+    );
+
     return html`
       <div>
         Enter the credentials of the Wi-Fi network that you want your device to
@@ -177,29 +197,32 @@ class SerialProvisionDialog extends LitElement {
               @selected=${(ev: { detail: { index: number } }) => {
                 const index = ev.detail.index;
                 // The "Join Other" item is always the last item.
-                this._selectedSsid = index === this._ssids!.length ? -1 : index;
+                this._selectedSsid =
+                  index === this._ssids!.length
+                    ? null
+                    : this._ssids![index].name;
               }}
               @closed=${(ev: Event) => ev.stopPropagation()}
             >
               ${this._ssids!.map(
                 (info, idx) => html`
-                  <is-list-item
-                    .selected=${this._selectedSsid === idx}
-                    value=${idx}
-                  >
+                  <is-list-item .selected=${selectedSsid === info} value=${idx}>
                     ${info.name}
                   </is-list-item>
                 `
               )}
-              <is-list-item .selected=${this._selectedSsid === -1} value="-1">
+              <is-list-item .selected=${!selectedSsid} value="-1">
                 Join other…
               </is-list-item>
             </is-select>
+            <ewt-icon-button @click=${this._updateSsids}>
+              ${refreshIcon}
+            </ewt-icon-button>
           `
         : ""}
       ${
         // Show input box if command not supported or "Join Other" selected
-        this._selectedSsid === -1
+        !selectedSsid
           ? html`
               <is-textfield label="Network Name" name="ssid"></is-textfield>
             `
@@ -207,7 +230,7 @@ class SerialProvisionDialog extends LitElement {
       }
       ${
         // Show password if custom SSID or needs password
-        this._selectedSsid === -1 || this._ssids![this._selectedSsid].secured
+        !selectedSsid || selectedSsid.secured
           ? html`
               <is-textfield
                 label="Password"
@@ -289,14 +312,49 @@ class SerialProvisionDialog extends LitElement {
     this._hasProvisioned = false;
   }
 
+  private async _updateSsids() {
+    const oldSsids = this._ssids;
+    this._ssids = undefined;
+    this._busy = true;
+
+    let ssids: Ssid[];
+
+    try {
+      ssids = await this._client!.scan();
+    } catch (err) {
+      // When we fail on first load, pick "Join other"
+      if (this._ssids === undefined) {
+        this._ssids = null;
+        this._selectedSsid = null;
+      }
+      this._busy = false;
+      return;
+    }
+
+    if (oldSsids) {
+      // If we had a previous list, ensure the selection is still valid
+      if (
+        this._selectedSsid &&
+        !ssids.find((s) => s.name === this._selectedSsid)
+      ) {
+        this._selectedSsid = ssids[0].name;
+      }
+    } else {
+      this._selectedSsid = ssids.length ? ssids[0].name : null;
+    }
+
+    this._ssids = ssids;
+    this._busy = false;
+  }
+
   private async _provision() {
     this._busy = true;
     try {
       await this._client!.provision(
-        this._selectedSsid === -1
+        this._selectedSsid === null
           ? this._inputSSID.value
-          : this._ssids![this._selectedSsid].name,
-        this._inputPassword.value,
+          : this._selectedSsid,
+        this._inputPassword?.value || "",
         30000 // Timeout in 30 seconds
       );
       this._hasProvisioned = true;
@@ -313,17 +371,7 @@ class SerialProvisionDialog extends LitElement {
     super.willUpdate(changedProps);
 
     if (changedProps.has("_showProvisionForm") && this._showProvisionForm) {
-      this._ssids = undefined;
-      this._client!.scan().then(
-        (ssids) => {
-          this._ssids = ssids;
-          this._selectedSsid = ssids.length ? 0 : -1;
-        },
-        () => {
-          this._ssids = null;
-          this._selectedSsid = -1;
-        }
-      );
+      this._updateSsids();
     }
   }
 
@@ -338,7 +386,10 @@ class SerialProvisionDialog extends LitElement {
 
     if (changedProps.has("_ssids") && this._ssids !== undefined) {
       toFocus = this._selectSSID;
-    } else if (changedProps.has("_selectedSsid") && this._selectedSsid === -1) {
+    } else if (
+      changedProps.has("_selectedSsid") &&
+      this._selectedSsid === null
+    ) {
       toFocus = this._inputSSID;
     }
 
@@ -390,6 +441,11 @@ class SerialProvisionDialog extends LitElement {
       --mdc-dialog-max-width: 390px;
       --mdc-theme-primary: var(--improv-primary-color, #03a9f4);
       --mdc-theme-on-primary: var(--improv-on-primary-color, #fff);
+    }
+    ewt-icon-button {
+      position: absolute;
+      right: 4px;
+      top: 10px;
     }
     is-textfield,
     is-select {
