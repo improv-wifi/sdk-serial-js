@@ -34,6 +34,7 @@ export const enum ImprovSerialErrorState {
   INVALID_RPC_PACKET = 0x01,
   UNKNOWN_RPC_COMMAND = 0x02,
   UNABLE_TO_CONNECT = 0x03,
+  TIMEOUT = 0xfe,
   UNKNOWN_ERROR = 0xff,
 }
 
@@ -42,6 +43,7 @@ export const ERROR_MSGS = {
   0x01: "INVALID_RPC_PACKET",
   0x02: "UNKNOWN_RPC_COMMAND",
   0x03: "UNABLE_TO_CONNECT",
+  0xfe: "TIMEOUT",
   0xff: "UNKNOWN_ERROR",
 };
 

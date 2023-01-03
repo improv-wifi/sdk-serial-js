@@ -81,5 +81,9 @@ console.log({
   nextUrl: improv.nextUrl,
 });
 
-await improv.provision("My Wifi", "My password");
+await improv.provision(
+  "My Wifi",
+  "My password",
+  30000  // Optional: Timeout in ms
+);
 ```

@@ -155,6 +155,10 @@ class SerialProvisionDialog extends LitElement {
         }
         break;
 
+      case ImprovSerialErrorState.TIMEOUT:
+        error = `Timeout`;
+        break;
+
       default:
         error = `Unknown error (${this._client!.error})`;
     }
@@ -292,7 +296,8 @@ class SerialProvisionDialog extends LitElement {
         this._selectedSsid === -1
           ? this._inputSSID.value
           : this._ssids![this._selectedSsid].name,
-        this._inputPassword.value
+        this._inputPassword.value,
+        30000 // Timeout in 30 seconds
       );
       this._hasProvisioned = true;
       this._showProvisionForm = false;
