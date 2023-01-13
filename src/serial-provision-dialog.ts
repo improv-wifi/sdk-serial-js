@@ -399,7 +399,14 @@ class SerialProvisionDialog extends LitElement {
   }
 
   private async _connect() {
-    const client = new ImprovSerial(this.port!, this.logger);
+    let client: ImprovSerial;
+    try {
+      client = new ImprovSerial(this.port!, this.logger);
+    } catch (err) {
+      this._state = "ERROR";
+      this._error = (err as any).message || err || "Unknown error";
+      return;
+    }
     client.addEventListener("state-changed", () => {
       this._state = "IMPROV-STATE";
       this.requestUpdate();
