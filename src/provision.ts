@@ -1,7 +1,7 @@
 import { SerialLaunchButton } from "./serial-launch-button.js";
-import "./serial-provision-dialog.js";
 
 export const startProvisioning = async (button: SerialLaunchButton) => {
+  import("./serial-provision-dialog.js");
   let port: SerialPort | undefined;
   try {
     port = await navigator.serial.requestPort();

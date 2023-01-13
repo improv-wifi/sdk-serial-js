@@ -1,3 +1,5 @@
+import { startProvisioning } from "./provision";
+
 export class SerialLaunchButton extends HTMLElement {
   public static isSupported = "serial" in navigator;
 
@@ -61,11 +63,6 @@ export class SerialLaunchButton extends HTMLElement {
 
     this.toggleAttribute("supported", true);
 
-    this.addEventListener("mouseover", () => {
-      // Preload
-      import("./provision");
-    });
-
     const slot = document.createElement("slot");
     slot.name = "activate";
     const button = document.createElement("button");
@@ -74,8 +71,7 @@ export class SerialLaunchButton extends HTMLElement {
 
     slot.addEventListener("click", async (ev) => {
       ev.preventDefault();
-      const mod = await import("./provision");
-      mod.startProvisioning(this);
+      startProvisioning(this);
     });
 
     if (
