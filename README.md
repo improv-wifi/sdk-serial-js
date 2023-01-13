@@ -52,6 +52,13 @@ It is possible to customize the button and the message. You do this by putting y
 </improv-wifi-serial-launch-button>
 ```
 
+### Events
+
+When the dialog is closed, a `closed` event will be fired on both `<improv-wifi-serial-launch-button>` and `<improv-wifi-serial-provision-dialog>`. This event will have a `detail` property with the following properties:
+
+ - `improv`: Boolean indicating if we connected to a device running Improv.
+ - `provisioned`: Boolean indicating if the device is connected to Wi-Fi.
+
 ## Browser Support
 
 This SDK requires a browser with support for WebSerial. Currently this is supported by Google Chrome, Microsoft Edge and other browsers based on the Blink engine.

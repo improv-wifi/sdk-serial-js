@@ -1,4 +1,5 @@
 import { SerialLaunchButton } from "./serial-launch-button.js";
+import { fireEvent } from "./util/fire-event.js";
 
 export const startProvisioning = async (button: SerialLaunchButton) => {
   import("./serial-provision-dialog.js");
@@ -23,8 +24,9 @@ export const startProvisioning = async (button: SerialLaunchButton) => {
   el.port = port;
   el.addEventListener(
     "closed",
-    () => {
-      port!.close();
+    async (ev: any) => {
+      await port!.close();
+      fireEvent(button, "closed" as any, ev.detail);
     },
     { once: true }
   );

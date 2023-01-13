@@ -437,9 +437,18 @@ class SerialProvisionDialog extends LitElement {
   }
 
   private async _handleClose() {
-    await this._client?.close();
-    this._client = undefined;
-    fireEvent(this, "closed" as any);
+    const eventData = {
+      improv: false,
+      provisioned: false,
+    };
+    if (this._client) {
+      eventData.improv = true;
+      eventData.provisioned =
+        this._client.state === ImprovSerialCurrentState.PROVISIONED;
+      await this._client?.close();
+      this._client = undefined;
+    }
+    fireEvent(this, "closed" as any, eventData);
     this.parentNode!.removeChild(this);
   }
 
