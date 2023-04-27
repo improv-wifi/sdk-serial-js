@@ -445,7 +445,7 @@ class SerialProvisionDialog extends LitElement {
       eventData.improv = true;
       eventData.provisioned =
         this._client.state === ImprovSerialCurrentState.PROVISIONED;
-      await this._client?.close();
+      await this._client.close();
       this._client = undefined;
     }
     fireEvent(this, "closed" as any, eventData);
