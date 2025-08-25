@@ -395,11 +395,10 @@ export class ImprovSerial extends EventTarget {
       // Chop off rpc command and checksum
       const result: string[] = [];
       const totalLength = data[1];
+      const decoder = new TextDecoder("utf-8");
       let idx = 2;
       while (idx < 2 + totalLength) {
-        result.push(
-          String.fromCodePoint(...data.slice(idx + 1, idx + data[idx] + 1))
-        );
+        result.push(decoder.decode(new Uint8Array(data.slice(idx + 1, idx + data[idx] + 1))));
         idx += data[idx] + 1;
       }
       if ("receivedData" in this._rpcFeedback) {
