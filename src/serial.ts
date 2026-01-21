@@ -8,8 +8,8 @@ import {
   PortNotReady,
   SERIAL_PACKET_HEADER,
 } from "./const.js";
-import { sleep } from "./util/sleep";
 import { hexFormatter } from "./util/hex-formatter";
+import { sleep } from "./util/sleep";
 
 interface FeedbackBase {
   command: ImprovSerialRPCCommand;
@@ -398,7 +398,11 @@ export class ImprovSerial extends EventTarget {
       const decoder = new TextDecoder("utf-8");
       let idx = 2;
       while (idx < 2 + totalLength) {
-        result.push(decoder.decode(new Uint8Array(data.slice(idx + 1, idx + data[idx] + 1))));
+        result.push(
+          decoder.decode(
+            new Uint8Array(data.slice(idx + 1, idx + data[idx] + 1))
+          )
+        );
         idx += data[idx] + 1;
       }
       if ("receivedData" in this._rpcFeedback) {
