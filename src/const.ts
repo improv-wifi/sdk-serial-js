@@ -24,6 +24,7 @@ export enum ImprovSerialMessageType {
 }
 
 export enum ImprovSerialCurrentState {
+  STOPPED = 0x00, // Provisioning unavailable (e.g. Wi-Fi disabled on the device)
   READY = 0x02, // Authorized
   PROVISIONING = 0x03,
   PROVISIONED = 0x04,
