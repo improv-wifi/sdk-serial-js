@@ -145,6 +145,9 @@ export class ImprovSerial extends EventTarget {
 
     // Only if we are provisioned will we get an rpc result
     if (this.state !== ImprovSerialCurrentState.PROVISIONED) {
+      // The device won't send an RPC result, so settle the promise ourselves.
+      // Otherwise it stays pending forever once we drop the feedback.
+      this._rpcFeedback?.resolve([]);
       this._rpcFeedback = undefined;
       return;
     }
