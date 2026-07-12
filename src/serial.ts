@@ -8,8 +8,8 @@ import {
   PortNotReady,
   SERIAL_PACKET_HEADER,
 } from "./const.js";
-import { hexFormatter } from "./util/hex-formatter";
 import { sleep } from "./util/sleep";
+import { hexFormatter } from "./util/hex-formatter";
 
 interface FeedbackBase {
   command: ImprovSerialRPCCommand;
@@ -37,7 +37,11 @@ export class ImprovSerial extends EventTarget {
     firmware: string;
     version: string;
     chipFamily: string;
+    osName: string | null;
+    osVersion: string | null;
   };
+
+  public improvVersion: number | undefined;
 
   public nextUrl: string | undefined;
 
@@ -49,7 +53,10 @@ export class ImprovSerial extends EventTarget {
 
   private _rpcFeedback?: FeedbackSinglePacket | FeedbackMultiplePackets;
 
-  constructor(public port: SerialPort, public logger: Logger) {
+  constructor(
+    public port: SerialPort,
+    public logger: Logger,
+  ) {
     super();
     if (port.readable === null) {
       throw new Error("Port is not readable");
@@ -78,11 +85,11 @@ export class ImprovSerial extends EventTarget {
       await new Promise(async (resolve, reject) => {
         setTimeout(
           () => reject(new Error("Improv Wi-Fi Serial not detected")),
-          timeout
+          timeout,
         );
         retryInterval = setInterval(
           () => this._sendRPC(ImprovSerialRPCCommand.REQUEST_CURRENT_STATE, []),
-          1000
+          1000,
         );
         await this.requestCurrentState();
         resolve(undefined);
@@ -127,7 +134,7 @@ export class ImprovSerial extends EventTarget {
         };
         rpcResult = this._sendRPCWithResponse(
           ImprovSerialRPCCommand.REQUEST_CURRENT_STATE,
-          []
+          [],
         );
         rpcResult.catch(cleanupAndReject);
       });
@@ -150,13 +157,15 @@ export class ImprovSerial extends EventTarget {
     const response = await this._sendRPCWithResponse(
       ImprovSerialRPCCommand.REQUEST_INFO,
       [],
-      timeout
+      timeout,
     );
     this.info = {
       firmware: response[0],
       version: response[1],
       name: response[3],
       chipFamily: response[2],
+      osName: response.length > 4 ? response[4] : null,
+      osVersion: response.length > 5 ? response[5] : null,
     };
   }
 
@@ -173,7 +182,7 @@ export class ImprovSerial extends EventTarget {
     const response = await this._sendRPCWithResponse(
       ImprovSerialRPCCommand.SEND_WIFI_SETTINGS,
       data,
-      timeout
+      timeout,
     );
     this.nextUrl = response[0];
   }
@@ -181,15 +190,15 @@ export class ImprovSerial extends EventTarget {
   public async scan(): Promise<Ssid[]> {
     const results = await this._sendRPCWithMultipleResponses(
       ImprovSerialRPCCommand.REQUEST_WIFI_NETWORKS,
-      []
+      [],
     );
     const ssids = results.map(([name, rssi, secured]) => ({
       name,
       rssi: parseInt(rssi),
-      secured: secured === "YES",
+      secured: secured !== "NO",
     }));
     ssids.sort((a, b) =>
-      a.name.toLocaleLowerCase().localeCompare(b.name.toLocaleLowerCase())
+      a.name.toLocaleLowerCase().localeCompare(b.name.toLocaleLowerCase()),
     );
     return ssids;
   }
@@ -205,13 +214,13 @@ export class ImprovSerial extends EventTarget {
   private async _sendRPCWithResponse(
     command: ImprovSerialRPCCommand,
     data: number[],
-    timeout?: number
+    timeout?: number,
   ) {
     // Commands that receive feedback will finish when either
     // the state changes or the error code becomes not 0.
     if (this._rpcFeedback) {
       throw new Error(
-        "Only 1 RPC command that requires feedback can be active"
+        "Only 1 RPC command that requires feedback can be active",
       );
     }
 
@@ -220,20 +229,20 @@ export class ImprovSerial extends EventTarget {
         this._rpcFeedback = { command, resolve, reject };
         this._sendRPC(command, data);
       }),
-      timeout
+      timeout,
     );
   }
 
   private async _sendRPCWithMultipleResponses(
     command: ImprovSerialRPCCommand,
     data: number[],
-    timeout?: number
+    timeout?: number,
   ) {
     // Commands that receive multiple feedbacks will finish when either
     // the state changes or the error code becomes not 0.
     if (this._rpcFeedback) {
       throw new Error(
-        "Only 1 RPC command that requires feedback can be active"
+        "Only 1 RPC command that requires feedback can be active",
       );
     }
 
@@ -247,13 +256,13 @@ export class ImprovSerial extends EventTarget {
         };
         this._sendRPC(command, data);
       }),
-      timeout
+      timeout,
     );
   }
 
   private async _awaitRPCResultWithTimeout<T>(
     sendRPCPromise: Promise<T>,
-    timeout?: number
+    timeout?: number,
   ) {
     if (!timeout) {
       return await sendRPCPromise;
@@ -262,7 +271,7 @@ export class ImprovSerial extends EventTarget {
     return await new Promise<T>((resolve, reject) => {
       const timeoutRPC = setTimeout(
         () => this._setError(ImprovSerialErrorState.TIMEOUT),
-        timeout
+        timeout,
       );
       sendRPCPromise.finally(() => clearTimeout(timeoutRPC));
       sendRPCPromise.then(resolve, reject);
@@ -374,7 +383,7 @@ export class ImprovSerial extends EventTarget {
     calculatedChecksum = calculatedChecksum & 0xff;
     if (calculatedChecksum !== packetChecksum) {
       this.logger.error(
-        `Received invalid checksum ${packetChecksum}. Expected ${calculatedChecksum}`
+        `Received invalid checksum ${packetChecksum}. Expected ${calculatedChecksum}`,
       );
       return;
     }
@@ -384,7 +393,7 @@ export class ImprovSerial extends EventTarget {
       this.dispatchEvent(
         new CustomEvent("state-changed", {
           detail: this.state,
-        })
+        }),
       );
     } else if (packetType === ImprovSerialMessageType.ERROR_STATE) {
       this._setError(data[0]);
@@ -397,7 +406,7 @@ export class ImprovSerial extends EventTarget {
 
       if (rpcCommand !== this._rpcFeedback.command) {
         this.logger.error(
-          `Received result for command ${rpcCommand} but expected ${this._rpcFeedback.command}`
+          `Received result for command ${rpcCommand} but expected ${this._rpcFeedback.command}`,
         );
         return;
       }
@@ -410,8 +419,8 @@ export class ImprovSerial extends EventTarget {
       while (idx < 2 + totalLength) {
         result.push(
           decoder.decode(
-            new Uint8Array(data.slice(idx + 1, idx + data[idx] + 1))
-          )
+            new Uint8Array(data.slice(idx + 1, idx + data[idx] + 1)),
+          ),
         );
         idx += data[idx] + 1;
       }
@@ -451,7 +460,7 @@ export class ImprovSerial extends EventTarget {
 
     this.logger.debug(
       "Writing to stream:",
-      hexFormatter(new Array(...payload))
+      hexFormatter(new Array(...payload)),
     );
     const writer = this.port.writable!.getWriter();
     await writer.write(payload);
@@ -472,7 +481,7 @@ export class ImprovSerial extends EventTarget {
     this.dispatchEvent(
       new CustomEvent("error-changed", {
         detail: this.error,
-      })
+      }),
     );
   }
 }

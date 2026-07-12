@@ -28,7 +28,7 @@ export const startProvisioning = async (button: SerialLaunchButton) => {
       await port!.close();
       fireEvent(button, "closed" as any, ev.detail);
     },
-    { once: true }
+    { once: true },
   );
   document.body.appendChild(el);
 };
