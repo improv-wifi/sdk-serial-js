@@ -176,7 +176,7 @@ class SerialProvisionDialog extends LitElement {
     let content: TemplateResult;
     let actions: TemplateResult | undefined;
 
-    if (this._state === "CONNECTING") {
+    if (this._state === "CONNECTING" || !this._client) {
       content = this._renderProgress("Connecting");
     } else if (this._state === "ERROR") {
       content = this._renderMessage(
@@ -206,10 +206,13 @@ class SerialProvisionDialog extends LitElement {
     } else if (this._client!.state === ImprovSerialCurrentState.PROVISIONING) {
       content = this._renderProgress("Provisioning");
     } else if (this._client!.state === ImprovSerialCurrentState.PROVISIONED) {
-      content = html` <div class="center">
-        <div class="icon">${OK_ICON}</div>
-        Provisioned!
-      </div>`;
+      content = html`
+        ${this._client?.info ? this._renderDeviceInfo() : nothing}
+        <div class="center">
+          <div class="icon">${OK_ICON}</div>
+          Provisioned!
+        </div>
+      `;
       actions =
         this._client!.nextUrl === undefined
           ? this._renderCloseAction()
