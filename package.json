@@ -14,14 +14,14 @@
     "@rollup/plugin-terser": "^1.0.0",
     "@rollup/plugin-typescript": "^12.3.0",
     "@types/w3c-web-serial": "^1.0.8",
+    "lit": "^3.3.3",
     "prettier": "^3.7.4",
-    "rollup": "^4.54.0",
-    "serve": "^14.2.5",
+    "rollup": "^4.62.2",
+    "serve": "^14.2.6",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "@material/web": "^2.4.1",
-    "lit": "^3.3.2",
     "tslib": "^2.8.1"
   }
 }
