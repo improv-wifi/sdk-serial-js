@@ -468,6 +468,13 @@ class SerialProvisionDialog extends LitElement {
   }
 
   private async _provision() {
+    // Read the form before setting `_busy`: that swaps the form for a progress
+    // view, and the render happens during any await below — after which the
+    // fields no longer exist and we'd provision with an empty password.
+    const ssid =
+      this._selectedSsid === null ? this._inputSSID.value : this._selectedSsid;
+    const password = this._inputPassword?.value || "";
+
     this._busy = true;
     // Wait for any in-flight scan to settle before provisioning so we don't
     // have two RPC commands in flight at once. Marking busy above already tells
@@ -475,11 +482,13 @@ class SerialProvisionDialog extends LitElement {
     await this._stopScanning();
     try {
       await this._client!.provision(
-        this._selectedSsid === null
-          ? this._inputSSID.value
-          : this._selectedSsid,
-        this._inputPassword?.value || "",
-        30000, // Timeout in 30 seconds
+        ssid,
+        password,
+        // Devices try to connect for ~30s before reporting failure. Our
+        // timeout must comfortably exceed that: it's only a safety net, and if
+        // it fires first the device's late failure packet rejects the *next*
+        // RPC we send (the resumed network scan) instead of this one.
+        45000,
       );
       // Success: leave the change-Wi-Fi form and show the provisioned screen.
       this._reprovision = false;
