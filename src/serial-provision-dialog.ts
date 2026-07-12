@@ -184,6 +184,12 @@ class SerialProvisionDialog extends LitElement {
         `An error occurred. ${this._error}`,
       );
       actions = this._renderCloseAction();
+    } else if (this._client!.state === ImprovSerialCurrentState.STOPPED) {
+      content = this._renderMessage(
+        ERROR_ICON,
+        "The connected device has Wi-Fi turned off, so it can't be configured right now. Enable the device's Wi-Fi, then try again.",
+      );
+      actions = this._renderCloseAction();
     } else if (this._client!.state === ImprovSerialCurrentState.READY) {
       if (this._busy) {
         content = this._renderProgress("Provisioning");
