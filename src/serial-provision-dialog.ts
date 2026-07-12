@@ -10,7 +10,6 @@ import {
 import { customElement, query, property, state } from "lit/decorators.js";
 import "@material/web/dialog/dialog.js";
 import "@material/web/iconbutton/filled-tonal-icon-button.js";
-import "@material/web/iconbutton/outlined-icon-button.js";
 import "@material/web/iconbutton/icon-button.js";
 import "@material/web/textfield/outlined-text-field.js";
 import "@material/web/button/outlined-button.js";
@@ -35,14 +34,6 @@ import { fireEvent } from "./util/fire-event";
 
 const ERROR_ICON = "⚠️";
 const OK_ICON = "🎉";
-const refreshIcon = svg`
-  <svg viewBox="0 0 24 24">
-    <path
-      fill="currentColor"
-      d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"
-    />
-  </svg>
-`;
 const infoIcon = svg`
   <svg viewBox="0 -960 960 960" width="24px">
       <path 
@@ -162,6 +153,11 @@ class SerialProvisionDialog extends LitElement {
 
   @state() private _showPassword = false;
 
+  // Show the configure form while already provisioned, to change the network.
+  @state() private _reprovision = false;
+
+  private _unsubSSIDs?: () => Promise<void>;
+
   @query("md-outlined-select") private _selectSSID!: MdOutlinedSelect;
   @query("md-outlined-text-field[name=ssid]")
   private _inputSSID!: MdOutlinedTextField;
@@ -190,18 +186,22 @@ class SerialProvisionDialog extends LitElement {
         "The connected device has Wi-Fi turned off, so it can't be configured right now. Enable the device's Wi-Fi, then try again.",
       );
       actions = this._renderCloseAction();
-    } else if (this._client!.state === ImprovSerialCurrentState.READY) {
+    } else if (this._showConfigureForm) {
       if (this._busy) {
         content = this._renderProgress("Provisioning");
       } else {
         heading = html`<md-filled-tonal-icon-button
             >${wifiIcon}</md-filled-tonal-icon-button
           >Configure Wi-Fi`;
-        content = this._renderImprovReady();
-        actions = html`${this._renderCloseAction()}
-          <md-filled-button @click=${this._provision}
-            >Connect</md-filled-button
-          > `;
+        if (this._ssids === undefined) {
+          content = this._renderProgress("Searching for networks");
+        } else {
+          content = this._renderImprovReady();
+          actions = html`${this._renderCloseAction()}
+            <md-filled-button @click=${this._provision}
+              >Connect</md-filled-button
+            > `;
+        }
       }
     } else if (this._client!.state === ImprovSerialCurrentState.PROVISIONING) {
       content = this._renderProgress("Provisioning");
@@ -213,13 +213,17 @@ class SerialProvisionDialog extends LitElement {
           Provisioned!
         </div>
       `;
-      actions =
-        this._client!.nextUrl === undefined
-          ? this._renderCloseAction()
-          : html`${this._renderCloseAction()}
-              <md-filled-button href=${this._client!.nextUrl} form="improv-form"
-                >Visit Device</md-filled-button
-              >`;
+      actions = html`${this._renderCloseAction()}
+        <md-outlined-button @click=${this._changeWifi}
+          >Change Wi-Fi</md-outlined-button
+        >
+        ${this._client!.nextUrl === undefined
+          ? nothing
+          : html`<md-filled-button
+              href=${this._client!.nextUrl}
+              form="improv-form"
+              >Visit Device</md-filled-button
+            >`}`;
     } else {
       content = this._renderMessage(
         ERROR_ICON,
@@ -305,56 +309,50 @@ class SerialProvisionDialog extends LitElement {
       ${error ? html`<p class="error">${error}</p>` : nothing}
       ${this._ssids !== null
         ? html`
-            <div class="network-select">
-              <md-outlined-select
-                name="ssid_select"
-                required
-                label="Network"
-                @change=${(ev: Event) => {
-                  const index = (ev.target as MdOutlinedSelect).selectedIndex;
-                  // The "Join Other" item is always the last item.
-                  this._selectedSsid =
-                    index === this._ssids!.length
-                      ? null
-                      : this._ssids![index].name;
-                }}
-                @closed=${(ev: Event) => ev.stopPropagation()}
-              >
-                ${this._ssids!.map(
-                  (info, idx) => html`
-                    <md-select-option
-                      .selected=${selectedSsid === info}
-                      value=${idx}
+            <md-outlined-select
+              name="ssid_select"
+              required
+              label="Network"
+              @change=${(ev: Event) => {
+                const index = (ev.target as MdOutlinedSelect).selectedIndex;
+                // The "Join Other" item is always the last item.
+                this._selectedSsid =
+                  index === this._ssids!.length
+                    ? null
+                    : this._ssids![index].name;
+              }}
+              @closed=${(ev: Event) => ev.stopPropagation()}
+            >
+              ${this._ssids!.map(
+                (info, idx) => html`
+                  <md-select-option
+                    .selected=${selectedSsid === info}
+                    value=${idx}
+                  >
+                    <span
+                      slot="start"
+                      class=${getSignalStrengthClass(info.rssi)}
+                      >${getWifiIcon(info.rssi)}</span
                     >
+                    <span slot="headline">${info.name}</span>
+                    <span slot="end" class="network-details">
+                      <span class="signal-strength">${info.rssi}dB</span>
                       <span
-                        slot="start"
-                        class=${getSignalStrengthClass(info.rssi)}
-                        >${getWifiIcon(info.rssi)}</span
+                        class="lock-icon ${info.secured
+                          ? "lock-secured"
+                          : "lock-unsecured"}"
+                        >${info.secured
+                          ? lockIcon
+                          : lockUnlockedRightIcon}</span
                       >
-                      <span slot="headline">${info.name}</span>
-                      <span slot="end" class="network-details">
-                        <span class="signal-strength">${info.rssi}dB</span>
-                        <span
-                          class="lock-icon ${info.secured
-                            ? "lock-secured"
-                            : "lock-unsecured"}"
-                          >${info.secured
-                            ? lockIcon
-                            : lockUnlockedRightIcon}</span
-                        >
-                      </span>
-                    </md-select-option>
-                  `,
-                )}
-                <md-select-option .selected=${!selectedSsid} value="-1">
-                  Join other…
-                </md-select-option>
-              </md-outlined-select>
-
-              <md-outlined-icon-button @click=${this._updateSsids} data-refresh>
-                ${refreshIcon}
-              </md-outlined-icon-button>
-            </div>
+                    </span>
+                  </md-select-option>
+                `,
+              )}
+              <md-select-option .selected=${!selectedSsid} value="-1">
+                Join other…
+              </md-select-option>
+            </md-outlined-select>
           `
         : nothing}
       ${
@@ -418,44 +416,58 @@ class SerialProvisionDialog extends LitElement {
     this._showPassword = !this._showPassword;
   }
 
-  private async _updateSsids(event: Event | undefined = undefined) {
-    event?.preventDefault();
-    const oldSsids = this._ssids;
-    this._ssids = undefined;
-    this._busy = true;
+  // Whether the network configuration form is the active view.
+  private get _showConfigureForm(): boolean {
+    return (
+      this._client?.state === ImprovSerialCurrentState.READY ||
+      (this._client?.state === ImprovSerialCurrentState.PROVISIONED &&
+        this._reprovision)
+    );
+  }
 
-    let ssids: Ssid[];
-
-    try {
-      ssids = await this._client!.scan();
-    } catch (err) {
-      // When we fail on first load, pick "Join other"
-      if (this._ssids === undefined) {
-        this._ssids = null;
-        this._selectedSsid = null;
-      }
-      this._busy = false;
+  // Scan while (and only while) the configure form is shown. Driven from
+  // `updated()`, so entering the form starts scanning and leaving it stops.
+  private _syncScanning() {
+    const shouldScan =
+      this._state === "IMPROV-STATE" && !this._busy && this._showConfigureForm;
+    if (shouldScan === !!this._unsubSSIDs) {
       return;
     }
-
-    if (oldSsids) {
-      // If we had a previous list, ensure the selection is still valid
-      if (
-        this._selectedSsid &&
-        !ssids.find((s) => s.name === this._selectedSsid)
-      ) {
-        this._selectedSsid = ssids[0].name;
-      }
+    if (shouldScan) {
+      this._unsubSSIDs = this._client!.subscribeSSIDs((ssids) => {
+        if (this._ssids === undefined) {
+          // First result: default to the strongest (first alphabetical) one.
+          this._selectedSsid = ssids.length ? ssids[0].name : null;
+        } else if (
+          this._selectedSsid !== null &&
+          !ssids.some((s) => s.name === this._selectedSsid)
+        ) {
+          // The selected network is no longer available. Keep "Join other"
+          // (null) selections as-is.
+          this._selectedSsid = ssids.length ? ssids[0].name : null;
+        }
+        this._ssids = ssids;
+      });
     } else {
-      this._selectedSsid = ssids.length ? ssids[0].name : null;
+      this._stopScanning();
     }
+  }
 
-    this._ssids = ssids;
-    this._busy = false;
+  private async _stopScanning() {
+    if (!this._unsubSSIDs) {
+      return;
+    }
+    const unsubscribe = this._unsubSSIDs;
+    this._unsubSSIDs = undefined;
+    await unsubscribe();
   }
 
   private async _provision() {
     this._busy = true;
+    // Wait for any in-flight scan to settle before provisioning so we don't
+    // have two RPC commands in flight at once. Marking busy above already tells
+    // `_syncScanning` to stop, but the provision RPC needs it stopped *now*.
+    await this._stopScanning();
     try {
       await this._client!.provision(
         this._selectedSsid === null
@@ -464,12 +476,19 @@ class SerialProvisionDialog extends LitElement {
         this._inputPassword?.value || "",
         30000, // Timeout in 30 seconds
       );
+      // Success: leave the change-Wi-Fi form and show the provisioned screen.
+      this._reprovision = false;
     } catch (err) {
-      // No need to do error handling because we listen for `error-changed` events
+      // No need to do error handling because we listen for `error-changed`
+      // events. Clearing busy resumes scanning via `_syncScanning`.
       console.log(err);
     } finally {
       this._busy = false;
     }
+  }
+
+  private _changeWifi() {
+    this._reprovision = true;
   }
 
   protected updated(changedProps: PropertyValues) {
@@ -479,9 +498,16 @@ class SerialProvisionDialog extends LitElement {
       this._connect();
     }
 
+    this._syncScanning();
+
     let toFocus: LitElement | undefined;
 
-    if (changedProps.has("_ssids") && this._ssids !== undefined) {
+    if (
+      changedProps.has("_ssids") &&
+      changedProps.get("_ssids") === undefined &&
+      this._ssids != null
+    ) {
+      // Only focus on the first result, not on every background scan update.
       toFocus = this._selectSSID;
     } else if (
       changedProps.has("_selectedSsid") &&
@@ -508,7 +534,18 @@ class SerialProvisionDialog extends LitElement {
       this._state = "IMPROV-STATE";
       this.requestUpdate();
     });
-    client.addEventListener("error-changed", () => this.requestUpdate());
+    client.addEventListener("error-changed", () => {
+      // If scanning fails before we have any networks, the device likely
+      // doesn't support it. Fall back to manual network entry.
+      if (
+        this._ssids === undefined &&
+        client.error !== ImprovSerialErrorState.NO_ERROR
+      ) {
+        this._ssids = null;
+        this._selectedSsid = null;
+      }
+      this.requestUpdate();
+    });
     try {
       await client.initialize(10000);
     } catch (err: any) {
@@ -531,11 +568,7 @@ class SerialProvisionDialog extends LitElement {
       this.requestUpdate();
     }
     this._client = client;
-    try {
-      await this._updateSsids(); // do an initial scan since we're showing the dialog immediately
-    } catch (err: any) {
-      console.error("Unable to update SSIDs", err);
-    }
+    // Scanning starts from `_syncScanning` once the configure form is shown.
   }
 
   private async _handleClose() {
@@ -552,6 +585,13 @@ class SerialProvisionDialog extends LitElement {
     }
     fireEvent(this, "closed" as any, eventData);
     this.parentNode!.removeChild(this);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    // Stop scanning when the dialog goes away. Not awaited: closing the client
+    // cancels the reader, which may leave the in-flight scan unsettled.
+    this._stopScanning();
   }
 
   static styles = css`
@@ -634,17 +674,6 @@ class SerialProvisionDialog extends LitElement {
     }
     md-outlined-select[name="ssid_select"] {
       width: 100%;
-    }
-
-    .network-select {
-      display: flex;
-      align-items: flex-end;
-      gap: 8px;
-      margin-top: 16px;
-    }
-
-    .network-select md-outlined-icon-button {
-      margin-bottom: 8px;
     }
 
     .network-details {

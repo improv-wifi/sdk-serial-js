@@ -30,6 +30,39 @@ export interface Ssid {
   secured: boolean;
 }
 
+const sortSsids = (ssids: Ssid[]): Ssid[] =>
+  ssids.sort((a, b) =>
+    a.name.toLocaleLowerCase().localeCompare(b.name.toLocaleLowerCase()),
+  );
+
+/** Merge two scans, keyed by name (newest values win), sorted alphabetically. */
+const mergeSsids = (previous: Ssid[], latest: Ssid[]): Ssid[] => {
+  const byName = new Map<string, Ssid>();
+  for (const ssid of previous) {
+    byName.set(ssid.name, ssid);
+  }
+  for (const ssid of latest) {
+    byName.set(ssid.name, ssid);
+  }
+  return sortSsids(Array.from(byName.values()));
+};
+
+/** Delay between Wi-Fi scans while subscribed. */
+const SCAN_INTERVAL = 3000;
+
+/** Whether two (alphabetically sorted) SSID lists differ in any value. */
+const ssidsChanged = (a: Ssid[], b: Ssid[]): boolean => {
+  if (a.length !== b.length) {
+    return true;
+  }
+  return a.some(
+    (ssid, i) =>
+      ssid.name !== b[i].name ||
+      ssid.rssi !== b[i].rssi ||
+      ssid.secured !== b[i].secured,
+  );
+};
+
 export class ImprovSerial extends EventTarget {
   public info?: {
     name: string;
@@ -199,10 +232,61 @@ export class ImprovSerial extends EventTarget {
       rssi: parseInt(rssi),
       secured: secured !== "NO",
     }));
-    ssids.sort((a, b) =>
-      a.name.toLocaleLowerCase().localeCompare(b.name.toLocaleLowerCase()),
-    );
-    return ssids;
+    return sortSsids(ssids);
+  }
+
+  /**
+   * Continuously scan for Wi-Fi networks, calling `onChange` whenever the list
+   * of networks changes.
+   *
+   * Results are merged with previous scans (networks are keyed by name and kept
+   * sorted alphabetically), so a network missing from a single scan won't
+   * immediately disappear. `onChange` is only called when a value in the list
+   * actually changes.
+   *
+   * Scanning stops on the first error (e.g. when the device doesn't support it)
+   * or when the returned function is called. That function resolves once the
+   * in-flight scan has settled, so it can be awaited before sending another RPC
+   * command (such as provisioning).
+   */
+  public subscribeSSIDs(
+    onChange: (ssids: Ssid[]) => void,
+  ): () => Promise<void> {
+    let active = true;
+    let current: Ssid[] | undefined;
+    let wake: (() => void) | undefined;
+
+    const loop = (async () => {
+      while (active) {
+        let ssids: Ssid[];
+        try {
+          ssids = await this.scan();
+        } catch (err) {
+          this.logger.error("Error while scanning for Wi-Fi networks", err);
+          break;
+        }
+        if (!active) {
+          break;
+        }
+        const merged =
+          current === undefined ? ssids : mergeSsids(current, ssids);
+        if (current === undefined || ssidsChanged(current, merged)) {
+          current = merged;
+          onChange(merged);
+        }
+        // Wait before the next scan, but wake immediately if unsubscribed.
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+          setTimeout(resolve, SCAN_INTERVAL);
+        });
+      }
+    })();
+
+    return () => {
+      active = false;
+      wake?.();
+      return loop;
+    };
   }
 
   /**
