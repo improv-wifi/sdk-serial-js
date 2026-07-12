@@ -145,7 +145,11 @@ export class ImprovSerial extends EventTarget {
 
     // Only if we are provisioned will we get an rpc result
     if (this.state !== ImprovSerialCurrentState.PROVISIONED) {
+      // Nothing will ever settle rpcResult, so resolve it before dropping the
+      // feedback, otherwise it stays pending forever.
+      const feedback = this._rpcFeedback as FeedbackSinglePacket | undefined;
       this._rpcFeedback = undefined;
+      feedback?.resolve([]);
       return;
     }
 
