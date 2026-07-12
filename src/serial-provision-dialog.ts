@@ -557,6 +557,9 @@ class SerialProvisionDialog extends LitElement {
       --md-dialog-container-max-block-size: none !important;
       --md-sys-color-primary: var(--improv-primary-color, #03a9f4);
       --md-sys-color-on-primary: var(--improv-on-primary-color, #fff);
+      --md-ref-typeface-brand: system-ui, sans-serif;
+      --md-ref-typeface-plain: system-ui, sans-serif;
+      font-family: system-ui, sans-serif;
     }
 
     md-dialog {
