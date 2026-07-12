@@ -203,6 +203,71 @@ export class ImprovSerial extends EventTarget {
     return ssids;
   }
 
+  /**
+   * Get the current hostname of the device.
+   */
+  public async getHostname(timeout?: number): Promise<string> {
+    const response = await this._sendRPCWithResponse(
+      ImprovSerialRPCCommand.HOSTNAME,
+      [],
+      timeout,
+    );
+    return response[0];
+  }
+
+  /**
+   * Set the hostname of the device. Returns the hostname as set by the device.
+   *
+   * Hostnames need to conform to RFC 1123: letters, numbers and hyphens, up to
+   * 255 characters. The device rejects other hostnames with a BAD_HOSTNAME error.
+   */
+  public async setHostname(
+    hostname: string,
+    timeout?: number,
+  ): Promise<string> {
+    const encoder = new TextEncoder();
+    const response = await this._sendRPCWithResponse(
+      ImprovSerialRPCCommand.HOSTNAME,
+      [...encoder.encode(hostname)],
+      timeout,
+    );
+    return response[0];
+  }
+
+  /**
+   * Get the current device name. This is the same value as `info.name`.
+   */
+  public async getDeviceName(timeout?: number): Promise<string> {
+    const response = await this._sendRPCWithResponse(
+      ImprovSerialRPCCommand.DEVICE_NAME,
+      [],
+      timeout,
+    );
+    return response[0];
+  }
+
+  /**
+   * Set the device name. Returns the device name as set by the device.
+   *
+   * When setting both the device name and the hostname, set the device name
+   * first, as it can change the default hostname.
+   */
+  public async setDeviceName(
+    deviceName: string,
+    timeout?: number,
+  ): Promise<string> {
+    const encoder = new TextEncoder();
+    const response = await this._sendRPCWithResponse(
+      ImprovSerialRPCCommand.DEVICE_NAME,
+      [...encoder.encode(deviceName)],
+      timeout,
+    );
+    if (this.info) {
+      this.info.name = response[0];
+    }
+    return response[0];
+  }
+
   private _sendRPC(command: ImprovSerialRPCCommand, data: number[]) {
     this.writePacketToStream(ImprovSerialMessageType.RPC, [
       command,

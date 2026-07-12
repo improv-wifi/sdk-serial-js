@@ -94,3 +94,17 @@ await improv.provision(
   30000  // Optional: Timeout in ms
 );
 ```
+
+The hostname and device name can be read and written while the device is authorized. Each method takes an optional timeout in ms as its last argument, and the setters return the value as it was applied by the device.
+
+```ts
+const hostname = await improv.getHostname();
+await improv.setHostname("my-device");
+
+const deviceName = await improv.getDeviceName();
+await improv.setDeviceName("My Device");
+```
+
+Hostnames need to conform to [RFC 1123](https://datatracker.ietf.org/doc/html/rfc1123): letters, numbers and hyphens, up to 255 characters. `setHostname` rejects with `BAD_HOSTNAME` if the device does not accept the hostname.
+
+If you set both, set the device name first, as it can change the default hostname.
