@@ -445,8 +445,10 @@ class SerialProvisionDialog extends LitElement {
           this._selectedSsid !== null &&
           !networks.some((s) => s.name === this._selectedSsid)
         ) {
-          // The selected network is no longer available. Keep "Join other"
-          // (null) selections as-is.
+          // A merged scan never drops networks, but the selection persists
+          // across scan restarts (after a failed provision, or reopening to
+          // change Wi-Fi), and the first fresh scan may not include it yet.
+          // Re-default when that happens; keep "Join other" (null) as-is.
           this._selectedSsid = networks.length ? networks[0].name : null;
         }
         this._ssids = networks;
