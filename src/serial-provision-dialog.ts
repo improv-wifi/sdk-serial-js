@@ -434,19 +434,22 @@ class SerialProvisionDialog extends LitElement {
       return;
     }
     if (shouldScan) {
-      this._unsubSSIDs = this._client!.subscribeSSIDs((ssids) => {
-        if (this._ssids === undefined) {
+      this._unsubSSIDs = this._client!.subscribeSSIDs((networks) => {
+        if (networks === null) {
+          // Scanning isn't available; fall back to manual network entry.
+          this._selectedSsid = null;
+        } else if (this._ssids == null) {
           // First result: default to the strongest (first alphabetical) one.
-          this._selectedSsid = ssids.length ? ssids[0].name : null;
+          this._selectedSsid = networks.length ? networks[0].name : null;
         } else if (
           this._selectedSsid !== null &&
-          !ssids.some((s) => s.name === this._selectedSsid)
+          !networks.some((s) => s.name === this._selectedSsid)
         ) {
           // The selected network is no longer available. Keep "Join other"
           // (null) selections as-is.
-          this._selectedSsid = ssids.length ? ssids[0].name : null;
+          this._selectedSsid = networks.length ? networks[0].name : null;
         }
-        this._ssids = ssids;
+        this._ssids = networks;
       });
     } else {
       this._stopScanning();
@@ -534,18 +537,7 @@ class SerialProvisionDialog extends LitElement {
       this._state = "IMPROV-STATE";
       this.requestUpdate();
     });
-    client.addEventListener("error-changed", () => {
-      // If scanning fails before we have any networks, the device likely
-      // doesn't support it. Fall back to manual network entry.
-      if (
-        this._ssids === undefined &&
-        client.error !== ImprovSerialErrorState.NO_ERROR
-      ) {
-        this._ssids = null;
-        this._selectedSsid = null;
-      }
-      this.requestUpdate();
-    });
+    client.addEventListener("error-changed", () => this.requestUpdate());
     try {
       await client.initialize(10000);
     } catch (err: any) {
