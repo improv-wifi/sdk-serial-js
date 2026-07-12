@@ -11,8 +11,8 @@
   },
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-terser": "^1.0.0",
     "@rollup/plugin-typescript": "^12.3.0",
-    "@rollup/plugin-terser": "^0.4.4",
     "@types/w3c-web-serial": "^1.0.8",
     "prettier": "^3.7.4",
     "rollup": "^4.54.0",
