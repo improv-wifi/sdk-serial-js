@@ -71,19 +71,29 @@ export class ImprovSerial extends EventTarget {
     if (this._reader === undefined) {
       throw new PortNotReady();
     }
+    // The device might still be booting (e.g. right after being flashed) and
+    // miss our request, so re-send it every second until it responds.
+    let retryInterval: ReturnType<typeof setInterval> | undefined;
     try {
       await new Promise(async (resolve, reject) => {
         setTimeout(
           () => reject(new Error("Improv Wi-Fi Serial not detected")),
           timeout
         );
+        retryInterval = setInterval(
+          () => this._sendRPC(ImprovSerialRPCCommand.REQUEST_CURRENT_STATE, []),
+          1000
+        );
         await this.requestCurrentState();
         resolve(undefined);
       });
+      clearInterval(retryInterval);
       await this.requestInfo();
     } catch (err) {
       await this.close();
       throw err;
+    } finally {
+      clearInterval(retryInterval);
     }
     return this.info!;
   }
