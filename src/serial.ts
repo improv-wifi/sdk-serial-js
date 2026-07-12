@@ -49,7 +49,7 @@ export class ImprovSerial extends EventTarget {
 
   public error = ImprovSerialErrorState.NO_ERROR;
 
-  private _reader?: ReadableStreamReader<Uint8Array>;
+  private _reader?: ReadableStreamDefaultReader<Uint8Array>;
 
   private _rpcFeedback?: FeedbackSinglePacket | FeedbackMultiplePackets;
 
