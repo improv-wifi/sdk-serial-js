@@ -89,7 +89,7 @@ export class ImprovSerial extends EventTarget {
         );
         retryInterval = setInterval(
           () => this._sendRPC(ImprovSerialRPCCommand.REQUEST_CURRENT_STATE, []),
-          1000
+          1000,
         );
         await this.requestCurrentState();
         resolve(undefined);
