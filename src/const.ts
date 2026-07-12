@@ -35,6 +35,8 @@ export const enum ImprovSerialErrorState {
   INVALID_RPC_PACKET = 0x01,
   UNKNOWN_RPC_COMMAND = 0x02,
   UNABLE_TO_CONNECT = 0x03,
+  // 0x04 NOT_AUTHORIZED is BLE-only (serial is always authorized) and intentionally omitted.
+  BAD_HOSTNAME = 0x05, // provided hostname is not acceptable
   TIMEOUT = 0xfe,
   UNKNOWN_ERROR = 0xff,
 }
@@ -44,6 +46,7 @@ export const ERROR_MSGS = {
   0x01: "INVALID_RPC_PACKET",
   0x02: "UNKNOWN_RPC_COMMAND",
   0x03: "UNABLE_TO_CONNECT",
+  0x05: "BAD_HOSTNAME",
   0xfe: "TIMEOUT",
   0xff: "UNKNOWN_ERROR",
 };
@@ -53,6 +56,8 @@ export const enum ImprovSerialRPCCommand {
   REQUEST_CURRENT_STATE = 0x02,
   REQUEST_INFO = 0x03,
   REQUEST_WIFI_NETWORKS = 0x04,
+  HOSTNAME = 0x05,
+  DEVICE_NAME = 0x06,
 }
 
 export class PortNotReady extends Error {
