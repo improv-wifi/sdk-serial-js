@@ -501,7 +501,7 @@ class SerialProvisionDialog extends LitElement {
     });
     client.addEventListener("error-changed", () => this.requestUpdate());
     try {
-      await client.initialize();
+      await client.initialize(10000);
     } catch (err: any) {
       this._state = "ERROR";
       this._error = this.learnMoreUrl
