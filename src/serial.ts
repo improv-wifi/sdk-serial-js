@@ -8,7 +8,6 @@ import {
   PortNotReady,
   SERIAL_PACKET_HEADER,
 } from "./const.js";
-import { sleep } from "./util/sleep";
 import { hexFormatter } from "./util/hex-formatter";
 
 interface FeedbackBase {
@@ -72,9 +71,9 @@ export class ImprovSerial extends EventTarget {
    */
   public async initialize(timeout = 1000): Promise<this["info"]> {
     this.logger.log("Initializing Improv Serial");
+    // Grabs the reader before its first await, so it is set (or failed to be
+    // set) by the time this returns.
     this._processInput();
-    // To give the input processing time to start.
-    await sleep(1000);
     if (this._reader === undefined) {
       throw new PortNotReady();
     }
