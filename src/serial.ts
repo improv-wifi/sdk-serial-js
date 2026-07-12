@@ -50,6 +50,13 @@ const mergeSsids = (previous: Ssid[], latest: Ssid[]): Ssid[] => {
 /** Delay between Wi-Fi scans while subscribed. */
 const SCAN_INTERVAL = 3000;
 
+/**
+ * Timeout for each scan while subscribed. Generous compared to a real scan
+ * (a few seconds) so it only trips when the device stops responding, turning a
+ * silent hang into an error the subscriber is told about.
+ */
+const SCAN_TIMEOUT = 30000;
+
 /** Whether two (alphabetically sorted) SSID lists differ in any value. */
 const ssidsChanged = (a: Ssid[], b: Ssid[]): boolean => {
   if (a.length !== b.length) {
@@ -222,10 +229,11 @@ export class ImprovSerial extends EventTarget {
     this.nextUrl = response[0];
   }
 
-  public async scan(): Promise<Ssid[]> {
+  public async scan(timeout?: number): Promise<Ssid[]> {
     const results = await this._sendRPCWithMultipleResponses(
       ImprovSerialRPCCommand.REQUEST_WIFI_NETWORKS,
       [],
+      timeout,
     );
     const ssids = results.map(([name, rssi, secured]) => ({
       name,
@@ -244,13 +252,16 @@ export class ImprovSerial extends EventTarget {
    * immediately disappear. `onChange` is only called when a value in the list
    * actually changes.
    *
-   * Scanning stops on the first error (e.g. when the device doesn't support it)
-   * or when the returned function is called. That function resolves once the
-   * in-flight scan has settled, so it can be awaited before sending another RPC
-   * command (such as provisioning).
+   * Scanning stops on the first error or when the returned function is called.
+   * If the first scan fails (e.g. the device doesn't support scanning, or stops
+   * responding), `onChange` is called once with `null` to signal that networks
+   * are unavailable.
+   *
+   * The returned function resolves once the in-flight scan has settled, so it
+   * can be awaited before sending another RPC command (such as provisioning).
    */
   public subscribeSSIDs(
-    onChange: (ssids: Ssid[]) => void,
+    onChange: (ssids: Ssid[] | null) => void,
   ): () => Promise<void> {
     let active = true;
     let current: Ssid[] | undefined;
@@ -260,9 +271,15 @@ export class ImprovSerial extends EventTarget {
       while (active) {
         let ssids: Ssid[];
         try {
-          ssids = await this.scan();
+          ssids = await this.scan(SCAN_TIMEOUT);
         } catch (err) {
           this.logger.error("Error while scanning for Wi-Fi networks", err);
+          // Only signal unavailability if we never got a result. Once we have
+          // networks, scanning is clearly supported, so keep the last list on a
+          // transient failure. Either way, stop scanning.
+          if (active && current === undefined) {
+            onChange(null);
+          }
           break;
         }
         if (!active) {
