@@ -1,5 +1,6 @@
 import {
   ERROR_MSGS,
+  ImprovNetworkFlag,
   ImprovSerialCurrentState,
   ImprovSerialErrorState,
   ImprovSerialMessageType,
@@ -28,6 +29,16 @@ export interface Ssid {
   name: string;
   rssi: number;
   secured: boolean;
+}
+
+export interface NetworkState {
+  online: boolean;
+  supportsWifi: boolean;
+  supportsEthernet: boolean;
+  supportsThread: boolean;
+  supportsModem: boolean;
+  // Reachable device URL(s), same as returned after provisioning. Empty offline.
+  urls: string[];
 }
 
 const sortSsids = (ssids: Ssid[]): Ssid[] =>
@@ -392,6 +403,34 @@ export class ImprovSerial extends EventTarget {
       this.info.name = response[0];
     }
     return response[0];
+  }
+
+  /**
+   * Request the device's network connectivity and supported interfaces.
+   *
+   * This is independent of the Wi-Fi provisioning state: a device already
+   * online over Ethernet reports that here without Wi-Fi provisioning. The
+   * first response string is the network flags as a decimal-encoded byte, and
+   * when online the reachable device URL(s) follow.
+   *
+   * This command is optional. Devices that do not implement it respond with
+   * UNKNOWN_RPC_COMMAND, so this rejects with that error for such devices.
+   */
+  public async requestNetworkState(timeout?: number): Promise<NetworkState> {
+    const response = await this._sendRPCWithResponse(
+      ImprovSerialRPCCommand.REQUEST_NETWORK_STATE,
+      [],
+      timeout,
+    );
+    const flags = parseInt(response[0]);
+    return {
+      online: (flags & ImprovNetworkFlag.IS_ONLINE) !== 0,
+      supportsWifi: (flags & ImprovNetworkFlag.SUPPORTS_WIFI) !== 0,
+      supportsEthernet: (flags & ImprovNetworkFlag.SUPPORTS_ETHERNET) !== 0,
+      supportsThread: (flags & ImprovNetworkFlag.SUPPORTS_THREAD) !== 0,
+      supportsModem: (flags & ImprovNetworkFlag.SUPPORTS_MODEM) !== 0,
+      urls: response.slice(1),
+    };
   }
 
   private _sendRPC(command: ImprovSerialRPCCommand, data: number[]) {
