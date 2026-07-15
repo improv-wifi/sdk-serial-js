@@ -443,15 +443,15 @@ export class ImprovSerial extends EventTarget {
       return await sendRPCPromise;
     }
 
-    return await new Promise<T>((resolve, reject) => {
-      const timeoutRPC = setTimeout(
-        () => this._setError(ImprovSerialErrorState.TIMEOUT),
-        timeout,
-      );
-      sendRPCPromise.then(resolve, reject).finally(() => {
-        clearTimeout(timeoutRPC);
-      });
-    });
+    const timeoutRPC = setTimeout(
+      () => this._setError(ImprovSerialErrorState.TIMEOUT),
+      timeout,
+    );
+    try {
+      return await sendRPCPromise;
+    } finally {
+      clearTimeout(timeoutRPC);
+    }
   }
 
   private async _processInput() {
