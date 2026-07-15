@@ -173,40 +173,37 @@ export class ImprovSerial extends EventTarget {
    * was successful (see below).
    */
   public async requestCurrentState() {
+    // Every device reports its state; a provisioned one also returns the next
+    // URL. Attach the listener before sending, then wait for the state change;
+    // the RPC promise is only used to surface a command error.
     const abort = new AbortController();
-    const gotState = new Promise<void>((resolve) =>
-      this.addEventListener("state-changed", () => resolve(), {
-        once: true,
-        signal: abort.signal,
-      }),
-    );
-
-    // This command is answered differently per device: a provisioned device
-    // returns an RPC result (the next URL), while an unprovisioned one only
-    // fires a state change and never completes the RPC. Wait for the state
-    // change, or a command error (e.g. unsupported) if the RPC rejects first.
-    const rpcResult = this._sendRPCWithResponse(
-      ImprovSerialRPCCommand.REQUEST_CURRENT_STATE,
-      [],
-    );
-
+    let rpcResult: Promise<string[]>;
     try {
-      await Promise.race([gotState, rpcResult]);
+      await new Promise<void>((resolve, reject) => {
+        this.addEventListener("state-changed", () => resolve(), {
+          once: true,
+          signal: abort.signal,
+        });
+        rpcResult = this._sendRPCWithResponse(
+          ImprovSerialRPCCommand.REQUEST_CURRENT_STATE,
+          [],
+        );
+        rpcResult.catch(reject);
+      });
     } catch (err) {
       throw new Error(`Error fetching current state: ${err}`);
     } finally {
       abort.abort(); // drop the state-change listener if it never fired
     }
 
-    // Only a provisioned device sends an RPC result.
+    // Only a provisioned device sends an RPC result. For anything else, settle
+    // the pending command ourselves so it releases the lock now.
     if (this.state !== ImprovSerialCurrentState.PROVISIONED) {
-      // No result is coming, so settle the pending command ourselves; this
-      // releases the command lock now instead of holding it until the timeout.
       this._rpcFeedback?.resolve([]);
       return;
     }
 
-    this.nextUrl = (await rpcResult)[0];
+    this.nextUrl = (await rpcResult!)[0];
   }
 
   public async requestInfo(timeout?: number) {
