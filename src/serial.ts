@@ -92,6 +92,12 @@ export class ImprovSerial extends EventTarget {
 
   private _rpcFeedback?: FeedbackSinglePacket | FeedbackMultiplePackets;
 
+  // Resolves once the most recent `subscribeSSIDs` loop has fully stopped (its
+  // last in-flight scan settled). A new subscription waits on this before its
+  // first scan, so overlapping unsubscribe/subscribe cycles never put two scan
+  // RPCs on the wire at once.
+  private _scanLoop?: Promise<void>;
+
   constructor(
     public port: SerialPort,
     public logger: Logger,
@@ -267,7 +273,16 @@ export class ImprovSerial extends EventTarget {
     let current: Ssid[] | undefined;
     let wake: (() => void) | undefined;
 
+    // A previous subscription may still be settling its final scan when this
+    // one starts (e.g. leaving and re-opening the network form). Wait for it to
+    // fully tear down before we scan, or the two collide on the single RPC
+    // channel ("Only 1 RPC command that requires feedback can be active").
+    const previous = this._scanLoop;
+
     const loop = (async () => {
+      if (previous) {
+        await previous;
+      }
       while (active) {
         let ssids: Ssid[];
         try {
@@ -298,6 +313,7 @@ export class ImprovSerial extends EventTarget {
         });
       }
     })();
+    this._scanLoop = loop;
 
     return () => {
       active = false;

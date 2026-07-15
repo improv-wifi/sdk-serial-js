@@ -704,12 +704,9 @@ class SerialProvisionDialog extends LitElement {
       color: #ea4335;
     }
 
-    .signal-excellent {
-      color: #34a853;
-    }
-
+    .signal-excellent,
     .signal-good {
-      color: #4285f4;
+      color: #34a853;
     }
 
     .signal-fair {
