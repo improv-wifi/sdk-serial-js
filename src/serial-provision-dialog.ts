@@ -311,7 +311,7 @@ class SerialProvisionDialog extends LitElement {
     return html`
       ${this._client?.info ? this._renderDeviceInfo() : nothing}
       <div>
-        Enter the credentials of the Wi-Fi network that you want your device to
+        Enter credentials of the Wi-Fi network that you want your device to
         connect to.
       </div>
       ${error ? html`<p class="error">${error}</p>` : nothing}
@@ -384,6 +384,11 @@ class SerialProvisionDialog extends LitElement {
                 label="Password"
                 name="password"
                 type=${this._showPassword ? "text" : "password"}
+                @keydown=${(ev: KeyboardEvent) => {
+                  if (ev.key === "Enter") {
+                    this._provision();
+                  }
+                }}
               >
                 <md-icon-button
                   slot="trailing-icon"
