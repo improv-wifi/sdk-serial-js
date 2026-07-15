@@ -173,8 +173,6 @@ export class ImprovSerial extends EventTarget {
    * was successful (see below).
    */
   public async requestCurrentState() {
-    // Start listening for the state change before sending, so a fast device
-    // can't answer before we're ready.
     const abort = new AbortController();
     const gotState = new Promise<void>((resolve) =>
       this.addEventListener("state-changed", () => resolve(), {
