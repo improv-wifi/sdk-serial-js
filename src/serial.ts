@@ -93,7 +93,19 @@ export class ImprovSerial extends EventTarget {
 
   public state?: ImprovSerialCurrentState | undefined;
 
-  public error = ImprovSerialErrorState.NO_ERROR;
+  private _error = ImprovSerialErrorState.NO_ERROR;
+
+  /** Last device error (or local timeout). Assigning dispatches `error-changed`. */
+  public get error(): ImprovSerialErrorState {
+    return this._error;
+  }
+
+  public set error(error: ImprovSerialErrorState) {
+    this._error = error;
+    this.dispatchEvent(
+      new CustomEvent("error-changed", { detail: this._error }),
+    );
+  }
 
   private _reader?: ReadableStreamDefaultReader<Uint8Array>;
 
@@ -647,14 +659,9 @@ export class ImprovSerial extends EventTarget {
 
   // Error is either received from device or is a timeout
   private _setError(error: ImprovSerialErrorState) {
-    this.error = error;
     if (error > 0 && this._rpcFeedback) {
       this._rpcFeedback.reject(ERROR_MSGS[error] || `UNKNOWN_ERROR (${error})`);
     }
-    this.dispatchEvent(
-      new CustomEvent("error-changed", {
-        detail: this.error,
-      }),
-    );
+    this.error = error;
   }
 }
