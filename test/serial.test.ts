@@ -1,7 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 
 import { ImprovSerial } from "../src/serial";
-import { ImprovSerialCurrentState } from "../src/const";
+import { ImprovSerialCurrentState, ImprovSerialErrorState } from "../src/const";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -112,10 +112,10 @@ describe("ImprovSerial RPC serialization", () => {
     await expect(second).resolves.toEqual(["ok"]); // queue released after timeout
   });
 
-  it("keeps requestCurrentState working and releases the lock after it", async () => {
+  it("resolves requestCurrentState for an unprovisioned device and releases the lock", async () => {
     const client: any = newClient();
-    // Device reports it is not provisioned (READY); requestCurrentState then
-    // resolves itself, since an unprovisioned device sends no RPC result.
+    // An unprovisioned device (READY) only fires a state change and sends no
+    // RPC result; requestCurrentState settles the pending command itself.
     client._sendRPC = () => {
       setTimeout(() => {
         client.state = ImprovSerialCurrentState.READY;
@@ -133,5 +133,40 @@ describe("ImprovSerial RPC serialization", () => {
     await expect(client._sendRPCWithResponse(9, [], 500)).resolves.toEqual([
       "v",
     ]);
+  });
+
+  it("reads the next URL from requestCurrentState when provisioned", async () => {
+    const client: any = newClient();
+    // A provisioned device fires a state change and returns an RPC result.
+    client._sendRPC = () => {
+      setTimeout(() => {
+        client.state = ImprovSerialCurrentState.PROVISIONED;
+        client.dispatchEvent(
+          new CustomEvent("state-changed", { detail: client.state }),
+        );
+        client._rpcFeedback?.resolve(["http://device.local"]);
+      }, 10);
+    };
+
+    await client.requestCurrentState();
+    expect(client.nextUrl).toBe("http://device.local");
+    expect(client._rpcFeedback).toBeUndefined();
+  });
+
+  it("throws from requestCurrentState when the command errors", async () => {
+    const client: any = newClient();
+    // Device rejects the command (e.g. unable to connect) before any state
+    // change; _setError rejects the pending RPC.
+    client._sendRPC = () => {
+      setTimeout(
+        () => client._setError(ImprovSerialErrorState.UNABLE_TO_CONNECT),
+        10,
+      );
+    };
+
+    await expect(client.requestCurrentState()).rejects.toThrow(
+      "Error fetching current state",
+    );
+    expect(client._rpcFeedback).toBeUndefined();
   });
 });

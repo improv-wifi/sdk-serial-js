@@ -174,38 +174,41 @@ export class ImprovSerial extends EventTarget {
    * was successful (see below).
    */
   public async requestCurrentState() {
-    // Request current state and wait for 5s
-    let rpcResult: Promise<string[]> | undefined;
+    // This command is answered differently per device: a provisioned device
+    // returns an RPC result (the next URL), while an unprovisioned one only
+    // fires a state change and never completes the RPC. Wait for whichever the
+    // device gives us first.
+    const rpcResult = this._sendRPCWithResponse(
+      ImprovSerialRPCCommand.REQUEST_CURRENT_STATE,
+      [],
+    );
+
+    const gotState = new Promise<void>((resolve, reject) => {
+      const onStateChanged = () => resolve();
+      this.addEventListener("state-changed", onStateChanged, { once: true });
+      // A command error (e.g. unsupported) comes back as an RPC rejection
+      // before any state change; surface it and stop listening.
+      rpcResult.catch((err) => {
+        this.removeEventListener("state-changed", onStateChanged);
+        reject(err);
+      });
+    });
 
     try {
-      await new Promise(async (resolve, reject) => {
-        this.addEventListener("state-changed", resolve, { once: true });
-        const cleanupAndReject = (err: Error) => {
-          this.removeEventListener("state-changed", resolve);
-          reject(err);
-        };
-        rpcResult = this._sendRPCWithResponse(
-          ImprovSerialRPCCommand.REQUEST_CURRENT_STATE,
-          [],
-        );
-        rpcResult.catch(cleanupAndReject);
-      });
+      await gotState;
     } catch (err) {
-      this._rpcFeedback = undefined;
       throw new Error(`Error fetching current state: ${err}`);
     }
 
-    // Only if we are provisioned will we get an rpc result
+    // Only a provisioned device sends an RPC result.
     if (this.state !== ImprovSerialCurrentState.PROVISIONED) {
-      // The device won't send an RPC result, so settle the promise ourselves.
-      // Otherwise it stays pending forever once we drop the feedback.
+      // No result is coming, so settle the pending command ourselves; this
+      // releases the command lock now instead of holding it until the timeout.
       this._rpcFeedback?.resolve([]);
-      this._rpcFeedback = undefined;
       return;
     }
 
-    const data = await rpcResult!;
-    this.nextUrl = data[0];
+    this.nextUrl = (await rpcResult)[0];
   }
 
   public async requestInfo(timeout?: number) {
@@ -403,21 +406,55 @@ export class ImprovSerial extends EventTarget {
     return result;
   }
 
+  /**
+   * Send a command and resolve with its feedback. The command runs through the
+   * lock (one at a time) and the feedback slot is always cleared when it
+   * settles, so the completion, error, and timeout paths don't each have to.
+   * `createFeedback` builds the slot for a single- or multiple-response command.
+   */
+  private _runRPC<T>(
+    command: ImprovSerialRPCCommand,
+    data: number[],
+    timeout: number,
+    createFeedback: (
+      resolve: (value: T) => void,
+      reject: (err: string) => void,
+    ) => FeedbackSinglePacket | FeedbackMultiplePackets,
+  ): Promise<T> {
+    return this._enqueueRPC(() =>
+      this._awaitRPCResultWithTimeout(
+        new Promise<T>((resolve, reject) => {
+          const clearThen =
+            <A>(fn: (arg: A) => void) =>
+            (arg: A) => {
+              this._rpcFeedback = undefined;
+              fn(arg);
+            };
+          this._rpcFeedback = createFeedback(
+            clearThen(resolve),
+            clearThen(reject),
+          );
+          this._sendRPC(command, data);
+        }),
+        timeout,
+      ),
+    );
+  }
+
   private _sendRPCWithResponse(
     command: ImprovSerialRPCCommand,
     data: number[],
     timeout: number = DEFAULT_RPC_TIMEOUT,
   ) {
-    // Commands that receive feedback will finish when either
-    // the state changes or the error code becomes not 0.
-    return this._enqueueRPC(() =>
-      this._awaitRPCResultWithTimeout(
-        new Promise<string[]>((resolve, reject) => {
-          this._rpcFeedback = { command, resolve, reject };
-          this._sendRPC(command, data);
-        }),
-        timeout,
-      ),
+    return this._runRPC<string[]>(
+      command,
+      data,
+      timeout,
+      (resolve, reject) => ({
+        command,
+        resolve,
+        reject,
+      }),
     );
   }
 
@@ -426,21 +463,16 @@ export class ImprovSerial extends EventTarget {
     data: number[],
     timeout: number = DEFAULT_RPC_TIMEOUT,
   ) {
-    // Commands that receive multiple feedbacks will finish when either
-    // the state changes or the error code becomes not 0.
-    return this._enqueueRPC(() =>
-      this._awaitRPCResultWithTimeout(
-        new Promise<string[][]>((resolve, reject) => {
-          this._rpcFeedback = {
-            command,
-            resolve,
-            reject,
-            receivedData: [],
-          };
-          this._sendRPC(command, data);
-        }),
-        timeout,
-      ),
+    return this._runRPC<string[][]>(
+      command,
+      data,
+      timeout,
+      (resolve, reject) => ({
+        command,
+        resolve,
+        reject,
+        receivedData: [],
+      }),
     );
   }
 
@@ -613,13 +645,11 @@ export class ImprovSerial extends EventTarget {
         if (result.length > 0) {
           this._rpcFeedback.receivedData.push(result);
         } else {
-          // Result of 0 means we're done.
+          // Result of 0 means we're done. Resolving clears the feedback slot.
           this._rpcFeedback.resolve(this._rpcFeedback.receivedData);
-          this._rpcFeedback = undefined;
         }
       } else {
         this._rpcFeedback.resolve(result);
-        this._rpcFeedback = undefined;
       }
     } else {
       this.logger.error("Unable to handle packet", payload);
@@ -660,8 +690,8 @@ export class ImprovSerial extends EventTarget {
   private _setError(error: ImprovSerialErrorState) {
     this.error = error;
     if (error > 0 && this._rpcFeedback) {
+      // Rejecting clears the feedback slot.
       this._rpcFeedback.reject(ERROR_MSGS[error] || `UNKNOWN_ERROR (${error})`);
-      this._rpcFeedback = undefined;
     }
     this.dispatchEvent(
       new CustomEvent("error-changed", {
