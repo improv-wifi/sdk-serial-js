@@ -115,6 +115,14 @@ const visibilityOffIcon = svg`
   </svg>
 `;
 
+/** Name of the network with the strongest signal, null if there are none. */
+function strongestSsid(networks: Ssid[]): string | null {
+  return networks.length
+    ? networks.reduce((best, ssid) => (ssid.rssi > best.rssi ? ssid : best))
+        .name
+    : null;
+}
+
 function getWifiIcon(rssi: number): TemplateResult {
   if (rssi >= -50) return networkWifiFull;
   if (rssi >= -60) return networkWifi3Bar;
@@ -303,7 +311,7 @@ class SerialProvisionDialog extends LitElement {
     return html`
       ${this._client?.info ? this._renderDeviceInfo() : nothing}
       <div>
-        Enter the credentials of the Wi-Fi network that you want your device to
+        Enter credentials of the Wi-Fi network that you want your device to
         connect to.
       </div>
       ${error ? html`<p class="error">${error}</p>` : nothing}
@@ -376,6 +384,11 @@ class SerialProvisionDialog extends LitElement {
                 label="Password"
                 name="password"
                 type=${this._showPassword ? "text" : "password"}
+                @keydown=${(ev: KeyboardEvent) => {
+                  if (ev.key === "Enter") {
+                    this._provision();
+                  }
+                }}
               >
                 <md-icon-button
                   slot="trailing-icon"
@@ -439,8 +452,8 @@ class SerialProvisionDialog extends LitElement {
           // Scanning isn't available; fall back to manual network entry.
           this._selectedSsid = null;
         } else if (this._ssids == null) {
-          // First result: default to the strongest (first alphabetical) one.
-          this._selectedSsid = networks.length ? networks[0].name : null;
+          // First result: default to the network with the strongest signal.
+          this._selectedSsid = strongestSsid(networks);
         } else if (
           this._selectedSsid !== null &&
           !networks.some((s) => s.name === this._selectedSsid)
@@ -449,7 +462,7 @@ class SerialProvisionDialog extends LitElement {
           // across scan restarts (after a failed provision, or reopening to
           // change Wi-Fi), and the first fresh scan may not include it yet.
           // Re-default when that happens; keep "Join other" (null) as-is.
-          this._selectedSsid = networks.length ? networks[0].name : null;
+          this._selectedSsid = strongestSsid(networks);
         }
         this._ssids = networks;
       });
@@ -704,12 +717,9 @@ class SerialProvisionDialog extends LitElement {
       color: #ea4335;
     }
 
-    .signal-excellent {
-      color: #34a853;
-    }
-
+    .signal-excellent,
     .signal-good {
-      color: #4285f4;
+      color: #34a853;
     }
 
     .signal-fair {

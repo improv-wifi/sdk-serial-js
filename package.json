@@ -7,7 +7,8 @@
   "author": "Improv Wi-Fi maintainers",
   "license": "Apache-2.0",
   "scripts": {
-    "prepublishOnly": "script/build"
+    "prepublishOnly": "script/build",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^16.0.3",
@@ -18,7 +19,8 @@
     "prettier": "^3.7.4",
     "rollup": "^4.62.2",
     "serve": "^14.2.6",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   },
   "dependencies": {
     "@material/web": "^2.4.1",
