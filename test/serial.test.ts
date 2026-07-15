@@ -170,6 +170,21 @@ describe("ImprovSerial RPC serialization", () => {
     expect(client._rpcFeedback).toBeUndefined();
   });
 
+  it("decodes the network state flags and URLs", async () => {
+    const client: any = newClient();
+    // Spec example: flags 7 (online + Wi-Fi + Ethernet) followed by the URL.
+    fakeDevice(client, { result: ["7", "http://192.168.1.10"] });
+
+    await expect(client.requestNetworkState()).resolves.toEqual({
+      online: true,
+      supportsWifi: true,
+      supportsEthernet: true,
+      supportsThread: false,
+      supportsModem: false,
+      urls: ["http://192.168.1.10"],
+    });
+  });
+
   it("catches a state change fired synchronously on send", async () => {
     const client: any = newClient();
     // An instant device that answers the moment the request goes out: the
