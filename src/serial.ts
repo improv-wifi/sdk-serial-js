@@ -99,10 +99,9 @@ export class ImprovSerial extends EventTarget {
 
   private _rpcFeedback?: FeedbackSinglePacket | FeedbackMultiplePackets;
 
-  // Improv devices handle one RPC command at a time. Serialize commands here so
-  // callers never have to: each command waits for the previous one to settle
-  // instead of failing. Every command is bounded by a timeout, so the queue can
-  // never wedge on an unresponsive device.
+  // Improv devices handle one RPC command at a time, so commands are serialized
+  // here: each waits for the previous to settle. Every command is bounded by a
+  // timeout, so the queue can't wedge on an unresponsive device.
   private _rpcLock: Promise<unknown> = Promise.resolve();
 
   constructor(
@@ -407,9 +406,7 @@ export class ImprovSerial extends EventTarget {
   }
 
   /**
-   * Send a command and resolve with its feedback. The command runs through the
-   * lock (one at a time) and the feedback slot is always cleared when it
-   * settles, so the completion, error, and timeout paths don't each have to.
+   * Send a command and resolve with its feedback, one command at a time.
    * `createFeedback` builds the slot for a single- or multiple-response command.
    */
   private _runRPC<T>(
@@ -645,7 +642,7 @@ export class ImprovSerial extends EventTarget {
         if (result.length > 0) {
           this._rpcFeedback.receivedData.push(result);
         } else {
-          // Result of 0 means we're done. Resolving clears the feedback slot.
+          // Result of 0 means we're done.
           this._rpcFeedback.resolve(this._rpcFeedback.receivedData);
         }
       } else {
@@ -690,7 +687,6 @@ export class ImprovSerial extends EventTarget {
   private _setError(error: ImprovSerialErrorState) {
     this.error = error;
     if (error > 0 && this._rpcFeedback) {
-      // Rejecting clears the feedback slot.
       this._rpcFeedback.reject(ERROR_MSGS[error] || `UNKNOWN_ERROR (${error})`);
     }
     this.dispatchEvent(
