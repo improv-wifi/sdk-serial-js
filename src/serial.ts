@@ -57,6 +57,13 @@ const SCAN_INTERVAL = 3000;
  */
 const SCAN_TIMEOUT = 30000;
 
+/**
+ * Default timeout for an RPC command that receives feedback. Generous, since
+ * it's only a safety net: it guarantees every command eventually settles so the
+ * command queue can't wedge on a device that stopped responding.
+ */
+const DEFAULT_RPC_TIMEOUT = 30000;
+
 /** Whether two (alphabetically sorted) SSID lists differ in any value. */
 const ssidsChanged = (a: Ssid[], b: Ssid[]): boolean => {
   if (a.length !== b.length) {
@@ -92,11 +99,11 @@ export class ImprovSerial extends EventTarget {
 
   private _rpcFeedback?: FeedbackSinglePacket | FeedbackMultiplePackets;
 
-  // Resolves once the most recent `subscribeSSIDs` loop has fully stopped (its
-  // last in-flight scan settled). A new subscription waits on this before its
-  // first scan, so overlapping unsubscribe/subscribe cycles never put two scan
-  // RPCs on the wire at once.
-  private _scanLoop?: Promise<void>;
+  // Improv devices handle one RPC command at a time. Serialize commands here so
+  // callers never have to: each command waits for the previous one to settle
+  // instead of failing. Every command is bounded by a timeout, so the queue can
+  // never wedge on an unresponsive device.
+  private _rpcLock: Promise<unknown> = Promise.resolve();
 
   constructor(
     public port: SerialPort,
@@ -273,16 +280,7 @@ export class ImprovSerial extends EventTarget {
     let current: Ssid[] | undefined;
     let wake: (() => void) | undefined;
 
-    // A previous subscription may still be settling its final scan when this
-    // one starts (e.g. leaving and re-opening the network form). Wait for it to
-    // fully tear down before we scan, or the two collide on the single RPC
-    // channel ("Only 1 RPC command that requires feedback can be active").
-    const previous = this._scanLoop;
-
     const loop = (async () => {
-      if (previous) {
-        await previous;
-      }
       while (active) {
         let ssids: Ssid[];
         try {
@@ -313,7 +311,6 @@ export class ImprovSerial extends EventTarget {
         });
       }
     })();
-    this._scanLoop = loop;
 
     return () => {
       active = false;
@@ -395,52 +392,55 @@ export class ImprovSerial extends EventTarget {
     ]);
   }
 
-  private async _sendRPCWithResponse(
+  /**
+   * Run an RPC command once the previous one has settled, so devices that
+   * handle a single command at a time never see two at once. The chain is kept
+   * alive regardless of each command's outcome.
+   */
+  private _enqueueRPC<T>(run: () => Promise<T>): Promise<T> {
+    const result = this._rpcLock.then(run, run);
+    this._rpcLock = result.catch(() => {});
+    return result;
+  }
+
+  private _sendRPCWithResponse(
     command: ImprovSerialRPCCommand,
     data: number[],
-    timeout?: number,
+    timeout: number = DEFAULT_RPC_TIMEOUT,
   ) {
     // Commands that receive feedback will finish when either
     // the state changes or the error code becomes not 0.
-    if (this._rpcFeedback) {
-      throw new Error(
-        "Only 1 RPC command that requires feedback can be active",
-      );
-    }
-
-    return await this._awaitRPCResultWithTimeout(
-      new Promise<string[]>((resolve, reject) => {
-        this._rpcFeedback = { command, resolve, reject };
-        this._sendRPC(command, data);
-      }),
-      timeout,
+    return this._enqueueRPC(() =>
+      this._awaitRPCResultWithTimeout(
+        new Promise<string[]>((resolve, reject) => {
+          this._rpcFeedback = { command, resolve, reject };
+          this._sendRPC(command, data);
+        }),
+        timeout,
+      ),
     );
   }
 
-  private async _sendRPCWithMultipleResponses(
+  private _sendRPCWithMultipleResponses(
     command: ImprovSerialRPCCommand,
     data: number[],
-    timeout?: number,
+    timeout: number = DEFAULT_RPC_TIMEOUT,
   ) {
     // Commands that receive multiple feedbacks will finish when either
     // the state changes or the error code becomes not 0.
-    if (this._rpcFeedback) {
-      throw new Error(
-        "Only 1 RPC command that requires feedback can be active",
-      );
-    }
-
-    return await this._awaitRPCResultWithTimeout(
-      new Promise<string[][]>((resolve, reject) => {
-        this._rpcFeedback = {
-          command,
-          resolve,
-          reject,
-          receivedData: [],
-        };
-        this._sendRPC(command, data);
-      }),
-      timeout,
+    return this._enqueueRPC(() =>
+      this._awaitRPCResultWithTimeout(
+        new Promise<string[][]>((resolve, reject) => {
+          this._rpcFeedback = {
+            command,
+            resolve,
+            reject,
+            receivedData: [],
+          };
+          this._sendRPC(command, data);
+        }),
+        timeout,
+      ),
     );
   }
 
@@ -457,8 +457,9 @@ export class ImprovSerial extends EventTarget {
         () => this._setError(ImprovSerialErrorState.TIMEOUT),
         timeout,
       );
-      sendRPCPromise.finally(() => clearTimeout(timeoutRPC));
-      sendRPCPromise.then(resolve, reject);
+      sendRPCPromise.then(resolve, reject).finally(() => {
+        clearTimeout(timeoutRPC);
+      });
     });
   }
 
