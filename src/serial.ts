@@ -399,59 +399,28 @@ export class ImprovSerial extends EventTarget {
    * handle a single command at a time never see two at once. The chain is kept
    * alive regardless of each command's outcome.
    */
-  private _enqueueRPC<T>(run: () => Promise<T>): Promise<T> {
+  private _enqueueRPC<T>(send: () => Promise<T>, timeout: number): Promise<T> {
+    const run = () =>
+      this._awaitRPCResultWithTimeout(send(), timeout).finally(() => {
+        this._rpcFeedback = undefined;
+      });
     const result = this._rpcLock.then(run, run);
     this._rpcLock = result.catch(() => {});
     return result;
-  }
-
-  /**
-   * Send a command and resolve with its feedback, one command at a time.
-   * `createFeedback` builds the slot for a single- or multiple-response command.
-   */
-  private _runRPC<T>(
-    command: ImprovSerialRPCCommand,
-    data: number[],
-    timeout: number,
-    createFeedback: (
-      resolve: (value: T) => void,
-      reject: (err: string) => void,
-    ) => FeedbackSinglePacket | FeedbackMultiplePackets,
-  ): Promise<T> {
-    return this._enqueueRPC(() =>
-      this._awaitRPCResultWithTimeout(
-        new Promise<T>((resolve, reject) => {
-          const clearThen =
-            <A>(fn: (arg: A) => void) =>
-            (arg: A) => {
-              this._rpcFeedback = undefined;
-              fn(arg);
-            };
-          this._rpcFeedback = createFeedback(
-            clearThen(resolve),
-            clearThen(reject),
-          );
-          this._sendRPC(command, data);
-        }),
-        timeout,
-      ),
-    );
   }
 
   private _sendRPCWithResponse(
     command: ImprovSerialRPCCommand,
     data: number[],
     timeout: number = DEFAULT_RPC_TIMEOUT,
-  ) {
-    return this._runRPC<string[]>(
-      command,
-      data,
+  ): Promise<string[]> {
+    return this._enqueueRPC(
+      () =>
+        new Promise<string[]>((resolve, reject) => {
+          this._rpcFeedback = { command, resolve, reject };
+          this._sendRPC(command, data);
+        }),
       timeout,
-      (resolve, reject) => ({
-        command,
-        resolve,
-        reject,
-      }),
     );
   }
 
@@ -459,17 +428,14 @@ export class ImprovSerial extends EventTarget {
     command: ImprovSerialRPCCommand,
     data: number[],
     timeout: number = DEFAULT_RPC_TIMEOUT,
-  ) {
-    return this._runRPC<string[][]>(
-      command,
-      data,
+  ): Promise<string[][]> {
+    return this._enqueueRPC(
+      () =>
+        new Promise<string[][]>((resolve, reject) => {
+          this._rpcFeedback = { command, resolve, reject, receivedData: [] };
+          this._sendRPC(command, data);
+        }),
       timeout,
-      (resolve, reject) => ({
-        command,
-        resolve,
-        reject,
-        receivedData: [],
-      }),
     );
   }
 
