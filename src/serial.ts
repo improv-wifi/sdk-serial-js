@@ -173,30 +173,31 @@ export class ImprovSerial extends EventTarget {
    * was successful (see below).
    */
   public async requestCurrentState() {
+    // Start listening for the state change before sending, so a fast device
+    // can't answer before we're ready.
+    const abort = new AbortController();
+    const gotState = new Promise<void>((resolve) =>
+      this.addEventListener("state-changed", () => resolve(), {
+        once: true,
+        signal: abort.signal,
+      }),
+    );
+
     // This command is answered differently per device: a provisioned device
     // returns an RPC result (the next URL), while an unprovisioned one only
-    // fires a state change and never completes the RPC. Wait for whichever the
-    // device gives us first.
+    // fires a state change and never completes the RPC. Wait for the state
+    // change, or a command error (e.g. unsupported) if the RPC rejects first.
     const rpcResult = this._sendRPCWithResponse(
       ImprovSerialRPCCommand.REQUEST_CURRENT_STATE,
       [],
     );
 
-    const gotState = new Promise<void>((resolve, reject) => {
-      const onStateChanged = () => resolve();
-      this.addEventListener("state-changed", onStateChanged, { once: true });
-      // A command error (e.g. unsupported) comes back as an RPC rejection
-      // before any state change; surface it and stop listening.
-      rpcResult.catch((err) => {
-        this.removeEventListener("state-changed", onStateChanged);
-        reject(err);
-      });
-    });
-
     try {
-      await gotState;
+      await Promise.race([gotState, rpcResult]);
     } catch (err) {
       throw new Error(`Error fetching current state: ${err}`);
+    } finally {
+      abort.abort(); // drop the state-change listener if it never fired
     }
 
     // Only a provisioned device sends an RPC result.

@@ -169,4 +169,18 @@ describe("ImprovSerial RPC serialization", () => {
     );
     expect(client._rpcFeedback).toBeUndefined();
   });
+
+  it("catches a state change fired synchronously on send", async () => {
+    const client: any = newClient();
+    // An instant device that answers the moment the request goes out: the
+    // listener must already be attached, or we'd miss the state change.
+    client._sendRPC = () => {
+      client.state = ImprovSerialCurrentState.READY;
+      client.dispatchEvent(
+        new CustomEvent("state-changed", { detail: client.state }),
+      );
+    };
+
+    await expect(client.requestCurrentState()).resolves.toBeUndefined();
+  });
 });
