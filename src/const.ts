@@ -58,6 +58,16 @@ export const enum ImprovSerialRPCCommand {
   REQUEST_WIFI_NETWORKS = 0x04,
   HOSTNAME = 0x05,
   DEVICE_NAME = 0x06,
+  REQUEST_NETWORK_STATE = 0x07, // Connectivity + interface inventory
+}
+
+// Bitfield in element [0] of a REQUEST_NETWORK_STATE response.
+export const enum ImprovNetworkFlag {
+  IS_ONLINE = 1 << 0, // online via any interface
+  SUPPORTS_WIFI = 1 << 1, // present, possibly disabled
+  SUPPORTS_ETHERNET = 1 << 2,
+  SUPPORTS_THREAD = 1 << 3,
+  SUPPORTS_MODEM = 1 << 4,
 }
 
 export class PortNotReady extends Error {
