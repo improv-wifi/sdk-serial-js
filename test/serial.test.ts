@@ -185,6 +185,54 @@ describe("ImprovSerial RPC serialization", () => {
     });
   });
 
+  it("times requestCurrentState out with the caller's timeout", async () => {
+    const client: any = newClient();
+    // Device never answers (e.g. it is rebooting to switch network
+    // interfaces). Without the forwarded timeout this would sit out the 30s
+    // default and blow the test timeout.
+    client._sendRPC = () => {};
+
+    await expect(client.requestCurrentState(50)).rejects.toThrow(
+      "Error fetching current state",
+    );
+    expect(client._rpcFeedback).toBeUndefined();
+  });
+
+  it("clears nextUrl when the device leaves the provisioned state", async () => {
+    const client: any = newClient();
+    client.state = ImprovSerialCurrentState.PROVISIONED;
+    client.nextUrl = "http://192.168.1.5";
+
+    // I M P R O V <VERSION> <TYPE> <LENGTH> <DATA> <CHECKSUM>
+    const currentStatePacket = (state: number) => {
+      const line = [
+        ..."IMPROV".split("").map((c) => c.charCodeAt(0)),
+        1, // version
+        1, // CURRENT_STATE
+        1, // length
+        state,
+      ];
+      line.push(line.reduce((sum, b) => sum + b, 0) & 0xff);
+      return line;
+    };
+
+    // Device reboots onto Ethernet with Wi-Fi disabled: provisioning stops
+    // and the old Wi-Fi URL is no longer valid.
+    client._handleIncomingPacket(
+      currentStatePacket(ImprovSerialCurrentState.STOPPED),
+    );
+    expect(client.state).toBe(ImprovSerialCurrentState.STOPPED);
+    expect(client.nextUrl).toBeUndefined();
+
+    // Staying provisioned keeps it.
+    client.state = ImprovSerialCurrentState.PROVISIONED;
+    client.nextUrl = "http://192.168.1.5";
+    client._handleIncomingPacket(
+      currentStatePacket(ImprovSerialCurrentState.PROVISIONED),
+    );
+    expect(client.nextUrl).toBe("http://192.168.1.5");
+  });
+
   it("catches a state change fired synchronously on send", async () => {
     const client: any = newClient();
     // An instant device that answers the moment the request goes out: the
