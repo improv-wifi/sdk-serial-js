@@ -194,8 +194,12 @@ export class ImprovSerial extends EventTarget {
    * the Current State and if already provisioned,
    * the same response you would get if device provisioning
    * was successful (see below).
+   *
+   * A caller polling an intermittently-unresponsive device (e.g. one rebooting
+   * to switch network interfaces) can pass a timeout shorter than the default
+   * so each poll settles quickly.
    */
-  public async requestCurrentState() {
+  public async requestCurrentState(timeout?: number) {
     // Every device reports its state; a provisioned one also returns the next
     // URL. Attach the listener before sending, then wait for the state change;
     // the RPC promise is only used to surface a command error.
@@ -210,6 +214,7 @@ export class ImprovSerial extends EventTarget {
         rpcResult = this._sendRPCWithResponse(
           ImprovSerialRPCCommand.REQUEST_CURRENT_STATE,
           [],
+          timeout,
         );
         rpcResult.catch(reject);
       });
@@ -617,6 +622,12 @@ export class ImprovSerial extends EventTarget {
 
     if (packetType === ImprovSerialMessageType.CURRENT_STATE) {
       this.state = data[0];
+      if (this.state !== ImprovSerialCurrentState.PROVISIONED) {
+        // The URL from a successful provision is only valid while provisioned.
+        // A device that leaves that state (e.g. it detected an Ethernet link
+        // and rebooted with Wi-Fi disabled) must not keep advertising it.
+        this.nextUrl = undefined;
+      }
       this.dispatchEvent(
         new CustomEvent("state-changed", {
           detail: this.state,
