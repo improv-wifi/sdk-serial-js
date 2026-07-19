@@ -233,6 +233,110 @@ describe("ImprovSerial RPC serialization", () => {
     expect(client.nextUrl).toBe("http://192.168.1.5");
   });
 
+  it("stores the network state and dispatches network-state-changed only on change", async () => {
+    const client: any = newClient();
+    let result = ["6"]; // Wi-Fi + Ethernet, offline
+    client._sendRPC = () => {
+      setTimeout(() => {
+        const fb = client._rpcFeedback;
+        if (!fb) return;
+        fb.resolve(result);
+        client._rpcFeedback = undefined;
+      }, 5);
+    };
+    const events: any[] = [];
+    client.addEventListener("network-state-changed", (ev: CustomEvent) =>
+      events.push(ev.detail),
+    );
+
+    await client.requestNetworkState();
+    expect(client.networkState).toEqual({
+      online: false,
+      supportsWifi: true,
+      supportsEthernet: true,
+      supportsThread: false,
+      supportsModem: false,
+      urls: [],
+    });
+
+    await client.requestNetworkState(); // same answer: no new event
+
+    result = ["7", "http://192.168.1.10"]; // device came online
+    await client.requestNetworkState();
+
+    expect(events.length).toBe(2);
+    expect(events[1].online).toBe(true);
+    expect(events[1].urls).toEqual(["http://192.168.1.10"]);
+  });
+
+  it("marks network state unsupported on UNKNOWN_RPC_COMMAND and stops asking", async () => {
+    const client: any = newClient();
+    let sends = 0;
+    client._sendRPC = () => {
+      sends++;
+      setTimeout(
+        () => client._setError(ImprovSerialErrorState.UNKNOWN_RPC_COMMAND),
+        5,
+      );
+    };
+
+    await expect(client.requestNetworkState()).rejects.toBeDefined();
+    expect(client.networkState).toBeNull();
+
+    // Polling an unsupported device must not put anything on the wire.
+    client.startNetworkStatePolling(20);
+    await sleep(80);
+    expect(sends).toBe(1);
+  });
+
+  it("polls the network state until stopped", async () => {
+    const client: any = newClient();
+    let sends = 0;
+    client._sendRPC = () => {
+      sends++;
+      setTimeout(() => {
+        const fb = client._rpcFeedback;
+        if (!fb) return;
+        fb.resolve(["2"]);
+        client._rpcFeedback = undefined;
+      }, 5);
+    };
+
+    client.startNetworkStatePolling(20);
+    client.startNetworkStatePolling(20); // idempotent: must not start a second loop
+    await sleep(120);
+    expect(sends).toBeGreaterThanOrEqual(3);
+    expect(client.networkState?.supportsWifi).toBe(true);
+
+    client.stopNetworkStatePolling();
+    await sleep(40); // let an in-flight tick settle
+    const sendsAfterStop = sends;
+    await sleep(100); // a leaked second loop would keep sending here
+    expect(sends).toBe(sendsAfterStop);
+  });
+
+  it("stops network state polling on close", async () => {
+    const client: any = newClient();
+    let sends = 0;
+    client._sendRPC = () => {
+      sends++;
+      setTimeout(() => {
+        const fb = client._rpcFeedback;
+        if (!fb) return;
+        fb.resolve(["2"]);
+        client._rpcFeedback = undefined;
+      }, 5);
+    };
+
+    client.startNetworkStatePolling(20);
+    await sleep(60);
+    await client.close(); // no reader: returns right after stopping the poll
+    await sleep(40);
+    const sendsAfterClose = sends;
+    await sleep(100);
+    expect(sends).toBe(sendsAfterClose);
+  });
+
   it("catches a state change fired synchronously on send", async () => {
     const client: any = newClient();
     // An instant device that answers the moment the request goes out: the

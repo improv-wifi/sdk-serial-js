@@ -78,14 +78,21 @@ const improv = new ImprovSerial(port, console);
 
 improv.addEventListener("state-changed", console.log);
 improv.addEventListener("error-changed", console.log);
+improv.addEventListener("network-state-changed", console.log);
 
 await improv.initialize();
 
 improv.addEventListener("disconnect", console.log);
 
+// Optional: keep `improv.networkState` fresh (e.g. an Ethernet link coming
+// up). Stops itself for devices that don't support the command; also stopped
+// by `stopNetworkStatePolling()`, `close()`, and a disconnect.
+improv.startNetworkStatePolling();
+
 console.log({
   info: improv.info,
   nextUrl: improv.nextUrl,
+  networkState: improv.networkState,
 });
 
 await improv.provision(

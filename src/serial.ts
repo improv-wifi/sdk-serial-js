@@ -61,6 +61,15 @@ const mergeSsids = (previous: Ssid[], latest: Ssid[]): Ssid[] => {
 /** Delay between Wi-Fi scans while subscribed. */
 const SCAN_INTERVAL = 3000;
 
+/** Delay between polls while network state polling is started. */
+const NETWORK_STATE_POLL_INTERVAL = 2500;
+
+/**
+ * Timeout for each network state poll. Small so a busy device just costs a
+ * skipped tick; the next poll recovers.
+ */
+const NETWORK_STATE_POLL_TIMEOUT = 500;
+
 /**
  * Timeout for each scan while subscribed. Generous compared to a real scan
  * (a few seconds) so it only trips when the device stops responding, turning a
@@ -74,6 +83,16 @@ const SCAN_TIMEOUT = 30000;
  * command queue can't wedge on a device that stopped responding.
  */
 const DEFAULT_RPC_TIMEOUT = 30000;
+
+/** Whether two network states carry the same flags and URLs. */
+const networkStatesEqual = (a: NetworkState, b: NetworkState): boolean =>
+  a.online === b.online &&
+  a.supportsWifi === b.supportsWifi &&
+  a.supportsEthernet === b.supportsEthernet &&
+  a.supportsThread === b.supportsThread &&
+  a.supportsModem === b.supportsModem &&
+  a.urls.length === b.urls.length &&
+  a.urls.every((url, i) => url === b.urls[i]);
 
 /** Whether two (alphabetically sorted) SSID lists differ in any value. */
 const ssidsChanged = (a: Ssid[], b: Ssid[]): boolean => {
@@ -117,6 +136,37 @@ export class ImprovSerial extends EventTarget {
       new CustomEvent("error-changed", { detail: this._error }),
     );
   }
+
+  private _networkState: NetworkState | null | undefined;
+
+  /**
+   * Last known network state: `undefined` until a request succeeds, `null`
+   * once the device answers that it doesn't support the command. Assigning a
+   * change dispatches `network-state-changed`.
+   */
+  public get networkState(): NetworkState | null | undefined {
+    return this._networkState;
+  }
+
+  public set networkState(networkState: NetworkState | null | undefined) {
+    const previous = this._networkState;
+    this._networkState = networkState;
+    if (
+      previous === networkState ||
+      (previous != null &&
+        networkState != null &&
+        networkStatesEqual(previous, networkState))
+    ) {
+      return;
+    }
+    this.dispatchEvent(
+      new CustomEvent("network-state-changed", { detail: networkState }),
+    );
+  }
+
+  private _networkStatePollActive = false;
+
+  private _networkStatePollWake?: () => void;
 
   private _reader?: ReadableStreamDefaultReader<Uint8Array>;
 
@@ -180,6 +230,7 @@ export class ImprovSerial extends EventTarget {
   }
 
   public async close() {
+    this.stopNetworkStatePolling();
     if (!this._reader) {
       return;
     }
@@ -422,13 +473,22 @@ export class ImprovSerial extends EventTarget {
    * UNKNOWN_RPC_COMMAND, so this rejects with that error for such devices.
    */
   public async requestNetworkState(timeout?: number): Promise<NetworkState> {
-    const response = await this._sendRPCWithResponse(
-      ImprovSerialRPCCommand.REQUEST_NETWORK_STATE,
-      [],
-      timeout,
-    );
+    let response: string[];
+    try {
+      response = await this._sendRPCWithResponse(
+        ImprovSerialRPCCommand.REQUEST_NETWORK_STATE,
+        [],
+        timeout,
+      );
+    } catch (err) {
+      if (this.error === ImprovSerialErrorState.UNKNOWN_RPC_COMMAND) {
+        // Definitive: the device answered that it doesn't know the command.
+        this.networkState = null;
+      }
+      throw err;
+    }
     const flags = parseInt(response[0]);
-    return {
+    this.networkState = {
       online: (flags & ImprovNetworkFlag.IS_ONLINE) !== 0,
       supportsWifi: (flags & ImprovNetworkFlag.SUPPORTS_WIFI) !== 0,
       supportsEthernet: (flags & ImprovNetworkFlag.SUPPORTS_ETHERNET) !== 0,
@@ -436,6 +496,53 @@ export class ImprovSerial extends EventTarget {
       supportsModem: (flags & ImprovNetworkFlag.SUPPORTS_MODEM) !== 0,
       urls: response.slice(1),
     };
+    return this.networkState;
+  }
+
+  /**
+   * Poll the device's network state, keeping `networkState` fresh (each change
+   * dispatches `network-state-changed`). Starting is idempotent. Polling stops
+   * itself once the device reports it doesn't support the command; it is also
+   * stopped by `stopNetworkStatePolling()`, `close()`, and a disconnect.
+   *
+   * A failed poll (e.g. the device is busy or rebooting) keeps the last known
+   * state and simply retries on the next tick.
+   */
+  public startNetworkStatePolling(
+    interval: number = NETWORK_STATE_POLL_INTERVAL,
+    timeout: number = NETWORK_STATE_POLL_TIMEOUT,
+  ) {
+    if (this._networkStatePollActive || this.networkState === null) {
+      return;
+    }
+    this._networkStatePollActive = true;
+    (async () => {
+      while (this._networkStatePollActive) {
+        try {
+          await this.requestNetworkState(timeout);
+        } catch (err) {
+          if (this.networkState === null) {
+            break;
+          }
+          this.logger.debug(`Failed to fetch network state: ${err}`);
+        }
+        if (!this._networkStatePollActive) {
+          break;
+        }
+        // Wait before the next poll, but wake immediately when stopped.
+        await new Promise<void>((resolve) => {
+          this._networkStatePollWake = resolve;
+          setTimeout(resolve, interval);
+        });
+      }
+      this._networkStatePollActive = false;
+      this._networkStatePollWake = undefined;
+    })();
+  }
+
+  public stopNetworkStatePolling() {
+    this._networkStatePollActive = false;
+    this._networkStatePollWake?.();
   }
 
   private _sendRPC(command: ImprovSerialRPCCommand, data: number[]) {
@@ -584,6 +691,7 @@ export class ImprovSerial extends EventTarget {
     }
 
     this.logger.debug("Finished read loop");
+    this.stopNetworkStatePolling();
     this.dispatchEvent(new Event("disconnect"));
   }
 
