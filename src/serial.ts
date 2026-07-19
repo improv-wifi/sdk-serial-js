@@ -61,13 +61,10 @@ const mergeSsids = (previous: Ssid[], latest: Ssid[]): Ssid[] => {
 /** Delay between Wi-Fi scans while subscribed. */
 const SCAN_INTERVAL = 3000;
 
-/** Delay between polls while network state polling is started. */
+/** Delay between network state polls. */
 const NETWORK_STATE_POLL_INTERVAL = 2500;
 
-/**
- * Timeout for each network state poll. Small so a busy device just costs a
- * skipped tick; the next poll recovers.
- */
+/** Per-poll timeout; small so a busy device only costs a tick — the next poll recovers. */
 const NETWORK_STATE_POLL_TIMEOUT = 500;
 
 /**
@@ -140,9 +137,8 @@ export class ImprovSerial extends EventTarget {
   private _networkState: NetworkState | null | undefined;
 
   /**
-   * Last known network state: `undefined` until a request succeeds, `null`
-   * once the device answers that it doesn't support the command. Assigning a
-   * change dispatches `network-state-changed`.
+   * Last known network state: `undefined` until a request succeeds, `null` once
+   * the device reports the command unsupported. Changes dispatch `network-state-changed`.
    */
   public get networkState(): NetworkState | null | undefined {
     return this._networkState;
@@ -164,9 +160,12 @@ export class ImprovSerial extends EventTarget {
     );
   }
 
-  private _networkStatePollActive = false;
+  // Identity of the active poll loop; a superseded loop sees a new token and exits.
+  private _networkStatePollToken?: object;
 
   private _networkStatePollWake?: () => void;
+
+  private _closed = false;
 
   private _reader?: ReadableStreamDefaultReader<Uint8Array>;
 
@@ -230,6 +229,7 @@ export class ImprovSerial extends EventTarget {
   }
 
   public async close() {
+    this._closed = true;
     this.stopNetworkStatePolling();
     if (!this._reader) {
       return;
@@ -481,8 +481,8 @@ export class ImprovSerial extends EventTarget {
         timeout,
       );
     } catch (err) {
-      if (this.error === ImprovSerialErrorState.UNKNOWN_RPC_COMMAND) {
-        // Definitive: the device answered that it doesn't know the command.
+      // Not `this.error`: a later error can overwrite it before this catch runs.
+      if (err === ERROR_MSGS[ImprovSerialErrorState.UNKNOWN_RPC_COMMAND]) {
         this.networkState = null;
       }
       throw err;
@@ -500,24 +500,25 @@ export class ImprovSerial extends EventTarget {
   }
 
   /**
-   * Poll the device's network state, keeping `networkState` fresh (each change
-   * dispatches `network-state-changed`). Starting is idempotent. Polling stops
-   * itself once the device reports it doesn't support the command; it is also
-   * stopped by `stopNetworkStatePolling()`, `close()`, and a disconnect.
-   *
-   * A failed poll (e.g. the device is busy or rebooting) keeps the last known
-   * state and simply retries on the next tick.
+   * Poll the device's network state, keeping `networkState` fresh. Idempotent;
+   * stopped by `stopNetworkStatePolling()`, `close()`, a disconnect, or the
+   * device reporting the command unsupported. A failed poll keeps the last
+   * known state and retries on the next tick.
    */
   public startNetworkStatePolling(
     interval: number = NETWORK_STATE_POLL_INTERVAL,
     timeout: number = NETWORK_STATE_POLL_TIMEOUT,
   ) {
-    if (this._networkStatePollActive || this.networkState === null) {
+    if (
+      this._networkStatePollToken ||
+      this.networkState === null ||
+      this._closed
+    ) {
       return;
     }
-    this._networkStatePollActive = true;
+    const token = (this._networkStatePollToken = {});
     (async () => {
-      while (this._networkStatePollActive) {
+      while (this._networkStatePollToken === token) {
         try {
           await this.requestNetworkState(timeout);
         } catch (err) {
@@ -526,7 +527,7 @@ export class ImprovSerial extends EventTarget {
           }
           this.logger.debug(`Failed to fetch network state: ${err}`);
         }
-        if (!this._networkStatePollActive) {
+        if (this._networkStatePollToken !== token) {
           break;
         }
         // Wait before the next poll, but wake immediately when stopped.
@@ -535,14 +536,18 @@ export class ImprovSerial extends EventTarget {
           setTimeout(resolve, interval);
         });
       }
-      this._networkStatePollActive = false;
-      this._networkStatePollWake = undefined;
+      // Skip cleanup when superseded: a newer loop owns these now.
+      if (this._networkStatePollToken === token) {
+        this._networkStatePollToken = undefined;
+        this._networkStatePollWake = undefined;
+      }
     })();
   }
 
   public stopNetworkStatePolling() {
-    this._networkStatePollActive = false;
+    this._networkStatePollToken = undefined;
     this._networkStatePollWake?.();
+    this._networkStatePollWake = undefined;
   }
 
   private _sendRPC(command: ImprovSerialRPCCommand, data: number[]) {
@@ -691,6 +696,7 @@ export class ImprovSerial extends EventTarget {
     }
 
     this.logger.debug("Finished read loop");
+    this._closed = true;
     this.stopNetworkStatePolling();
     this.dispatchEvent(new Event("disconnect"));
   }
