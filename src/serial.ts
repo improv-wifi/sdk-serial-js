@@ -14,6 +14,8 @@ import { hexFormatter } from "./util/hex-formatter";
 interface FeedbackBase {
   command: ImprovSerialRPCCommand;
   reject: (err: string) => void;
+  // Failures only reject the command and leave `error` untouched.
+  quiet?: boolean;
 }
 
 interface FeedbackSinglePacket extends FeedbackBase {
@@ -61,6 +63,12 @@ const mergeSsids = (previous: Ssid[], latest: Ssid[]): Ssid[] => {
 /** Delay between Wi-Fi scans while subscribed. */
 const SCAN_INTERVAL = 3000;
 
+/** Delay between network state polls. */
+const NETWORK_STATE_POLL_INTERVAL = 2500;
+
+/** Per-poll timeout; small so a busy device only costs a tick — the next poll recovers. */
+const NETWORK_STATE_POLL_TIMEOUT = 500;
+
 /**
  * Timeout for each scan while subscribed. Generous compared to a real scan
  * (a few seconds) so it only trips when the device stops responding, turning a
@@ -74,6 +82,16 @@ const SCAN_TIMEOUT = 30000;
  * command queue can't wedge on a device that stopped responding.
  */
 const DEFAULT_RPC_TIMEOUT = 30000;
+
+/** Whether two network states carry the same flags and URLs. */
+const networkStatesEqual = (a: NetworkState, b: NetworkState): boolean =>
+  a.online === b.online &&
+  a.supportsWifi === b.supportsWifi &&
+  a.supportsEthernet === b.supportsEthernet &&
+  a.supportsThread === b.supportsThread &&
+  a.supportsModem === b.supportsModem &&
+  a.urls.length === b.urls.length &&
+  a.urls.every((url, i) => url === b.urls[i]);
 
 /** Whether two (alphabetically sorted) SSID lists differ in any value. */
 const ssidsChanged = (a: Ssid[], b: Ssid[]): boolean => {
@@ -117,6 +135,18 @@ export class ImprovSerial extends EventTarget {
       new CustomEvent("error-changed", { detail: this._error }),
     );
   }
+
+  private _networkState: NetworkState | null | undefined;
+
+  /**
+   * Last known network state: `undefined` until a request succeeds, `null` once
+   * the device reports the command unsupported. Changes dispatch `network-state-changed`.
+   */
+  public get networkState(): NetworkState | null | undefined {
+    return this._networkState;
+  }
+
+  private _stopNetworkStatePolling?: () => void;
 
   private _reader?: ReadableStreamDefaultReader<Uint8Array>;
 
@@ -180,6 +210,7 @@ export class ImprovSerial extends EventTarget {
   }
 
   public async close() {
+    this.stopNetworkStatePolling();
     if (!this._reader) {
       return;
     }
@@ -421,14 +452,81 @@ export class ImprovSerial extends EventTarget {
    * This command is optional. Devices that do not implement it respond with
    * UNKNOWN_RPC_COMMAND, so this rejects with that error for such devices.
    */
-  public async requestNetworkState(timeout?: number): Promise<NetworkState> {
-    const response = await this._sendRPCWithResponse(
-      ImprovSerialRPCCommand.REQUEST_NETWORK_STATE,
-      [],
-      timeout,
-    );
+  public requestNetworkState(timeout?: number): Promise<NetworkState> {
+    return this._requestNetworkState(timeout, false);
+  }
+
+  /**
+   * Poll the device's network state, keeping `networkState` fresh. Idempotent;
+   * stopped by `stopNetworkStatePolling()`, `close()`, a disconnect, or the
+   * device reporting the command unsupported. A failed poll keeps the last
+   * known state, leaves `error` untouched and retries on the next tick.
+   */
+  public startNetworkStatePolling(
+    interval: number = NETWORK_STATE_POLL_INTERVAL,
+    timeout: number = NETWORK_STATE_POLL_TIMEOUT,
+  ) {
+    if (
+      this._stopNetworkStatePolling ||
+      this.networkState === null ||
+      !this._reader
+    ) {
+      return;
+    }
+    let active = true;
+    let wake: (() => void) | undefined;
+    this._stopNetworkStatePolling = () => {
+      active = false;
+      wake?.();
+    };
+    (async () => {
+      while (active) {
+        try {
+          await this._requestNetworkState(timeout, true);
+        } catch (err) {
+          if (this.networkState === null) {
+            break;
+          }
+          this.logger.debug(`Failed to fetch network state: ${err}`);
+        }
+        if (!active) {
+          break;
+        }
+        // Wait before the next poll, but wake immediately when stopped.
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+          setTimeout(resolve, interval);
+        });
+      }
+    })();
+  }
+
+  public stopNetworkStatePolling() {
+    this._stopNetworkStatePolling?.();
+    this._stopNetworkStatePolling = undefined;
+  }
+
+  private async _requestNetworkState(
+    timeout: number | undefined,
+    quiet: boolean,
+  ): Promise<NetworkState> {
+    let response: string[];
+    try {
+      response = await this._sendRPCWithResponse(
+        ImprovSerialRPCCommand.REQUEST_NETWORK_STATE,
+        [],
+        timeout,
+        quiet,
+      );
+    } catch (err) {
+      // Not `this.error`: a later error can overwrite it before this catch runs.
+      if (err === ERROR_MSGS[ImprovSerialErrorState.UNKNOWN_RPC_COMMAND]) {
+        this._setNetworkState(null);
+      }
+      throw err;
+    }
     const flags = parseInt(response[0]);
-    return {
+    const networkState: NetworkState = {
       online: (flags & ImprovNetworkFlag.IS_ONLINE) !== 0,
       supportsWifi: (flags & ImprovNetworkFlag.SUPPORTS_WIFI) !== 0,
       supportsEthernet: (flags & ImprovNetworkFlag.SUPPORTS_ETHERNET) !== 0,
@@ -436,6 +534,24 @@ export class ImprovSerial extends EventTarget {
       supportsModem: (flags & ImprovNetworkFlag.SUPPORTS_MODEM) !== 0,
       urls: response.slice(1),
     };
+    this._setNetworkState(networkState);
+    return networkState;
+  }
+
+  private _setNetworkState(networkState: NetworkState | null) {
+    const previous = this._networkState;
+    this._networkState = networkState;
+    if (
+      previous === networkState ||
+      (previous != null &&
+        networkState != null &&
+        networkStatesEqual(previous, networkState))
+    ) {
+      return;
+    }
+    this.dispatchEvent(
+      new CustomEvent("network-state-changed", { detail: networkState }),
+    );
   }
 
   private _sendRPC(command: ImprovSerialRPCCommand, data: number[]) {
@@ -465,11 +581,12 @@ export class ImprovSerial extends EventTarget {
     command: ImprovSerialRPCCommand,
     data: number[],
     timeout: number = DEFAULT_RPC_TIMEOUT,
+    quiet = false,
   ): Promise<string[]> {
     return this._enqueueRPC(
       () =>
         new Promise<string[]>((resolve, reject) => {
-          this._rpcFeedback = { command, resolve, reject };
+          this._rpcFeedback = { command, resolve, reject, quiet };
           this._sendRPC(command, data);
         }),
       timeout,
@@ -584,6 +701,7 @@ export class ImprovSerial extends EventTarget {
     }
 
     this.logger.debug("Finished read loop");
+    this.stopNetworkStatePolling();
     this.dispatchEvent(new Event("disconnect"));
   }
 
@@ -711,6 +829,9 @@ export class ImprovSerial extends EventTarget {
   private _setError(error: ImprovSerialErrorState) {
     if (error > 0 && this._rpcFeedback) {
       this._rpcFeedback.reject(ERROR_MSGS[error] || `UNKNOWN_ERROR (${error})`);
+      if (this._rpcFeedback.quiet) {
+        return;
+      }
     }
     this.error = error;
   }

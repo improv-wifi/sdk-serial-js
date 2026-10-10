@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ImprovSerial } from "../src/serial";
 import { ImprovSerialCurrentState, ImprovSerialErrorState } from "../src/const";
@@ -233,6 +233,56 @@ describe("ImprovSerial RPC serialization", () => {
     expect(client.nextUrl).toBe("http://192.168.1.5");
   });
 
+  it("stores the network state and dispatches network-state-changed only on change", async () => {
+    const client: any = newClient();
+    let result = ["6"]; // Wi-Fi + Ethernet, offline
+    client._sendRPC = () => {
+      setTimeout(() => {
+        const fb = client._rpcFeedback;
+        if (!fb) return;
+        fb.resolve(result);
+        client._rpcFeedback = undefined;
+      }, 5);
+    };
+    const events: any[] = [];
+    client.addEventListener("network-state-changed", (ev: CustomEvent) =>
+      events.push(ev.detail),
+    );
+
+    await client.requestNetworkState();
+    expect(client.networkState).toEqual({
+      online: false,
+      supportsWifi: true,
+      supportsEthernet: true,
+      supportsThread: false,
+      supportsModem: false,
+      urls: [],
+    });
+
+    await client.requestNetworkState(); // same answer: no new event
+
+    result = ["7", "http://192.168.1.10"]; // device came online
+    await client.requestNetworkState();
+
+    expect(events.length).toBe(2);
+    expect(events[1].online).toBe(true);
+    expect(events[1].urls).toEqual(["http://192.168.1.10"]);
+  });
+
+  it("classifies UNKNOWN_RPC_COMMAND even when a later error overwrites client.error", async () => {
+    const client: any = newClient();
+    client._sendRPC = () => {
+      setTimeout(() => {
+        client._setError(ImprovSerialErrorState.UNKNOWN_RPC_COMMAND);
+        // Lands before the rejection's catch (a microtask) can read it.
+        client.error = ImprovSerialErrorState.TIMEOUT;
+      }, 5);
+    };
+
+    await expect(client.requestNetworkState()).rejects.toBeDefined();
+    expect(client.networkState).toBeNull();
+  });
+
   it("catches a state change fired synchronously on send", async () => {
     const client: any = newClient();
     // An instant device that answers the moment the request goes out: the
@@ -245,5 +295,136 @@ describe("ImprovSerial RPC serialization", () => {
     };
 
     await expect(client.requestCurrentState()).resolves.toBeUndefined();
+  });
+});
+
+describe("ImprovSerial network state polling", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // Polling only starts while the read loop runs. Cancelling the fake reader
+  // ends it the way a real reader does: with a disconnect.
+  const pollingClient = () => {
+    const client: any = newClient();
+    client._reader = {
+      cancel: () =>
+        setTimeout(() => client.dispatchEvent(new Event("disconnect"))),
+    };
+    return client;
+  };
+
+  it("polls until stopped", async () => {
+    const client = pollingClient();
+    let sends = 0;
+    fakeDevice(client, { result: ["2"], delay: 5, onSend: () => sends++ });
+
+    client.startNetworkStatePolling(20);
+    client.startNetworkStatePolling(20); // idempotent: must not start a second loop
+    // Polls at 0, 25, 50, 75 and 100ms: each answer takes 5ms, then 20ms of sleep.
+    await vi.advanceTimersByTimeAsync(110);
+    expect(sends).toBe(5);
+    expect(client.networkState?.supportsWifi).toBe(true);
+
+    client.stopNetworkStatePolling();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(sends).toBe(5);
+  });
+
+  it("keeps a single poll loop across a stop and start during an in-flight poll", async () => {
+    const client = pollingClient();
+    let sends = 0;
+    fakeDevice(client, { result: ["2"], delay: 20, onSend: () => sends++ });
+
+    client.startNetworkStatePolling(50);
+    await vi.advanceTimersByTimeAsync(10); // first poll is now in flight
+    client.stopNetworkStatePolling();
+    client.startNetworkStatePolling(50);
+
+    // After the first poll at 0ms, the new loop queues behind it and polls at
+    // 20, 90, 160, 230 and 300ms. A leaked old loop would add more.
+    await vi.advanceTimersByTimeAsync(300);
+    expect(sends).toBe(6);
+  });
+
+  it("does not poll a device that reports the command unsupported", async () => {
+    const client = pollingClient();
+    let sends = 0;
+    client._sendRPC = () => {
+      sends++;
+      setTimeout(
+        () => client._setError(ImprovSerialErrorState.UNKNOWN_RPC_COMMAND),
+        5,
+      );
+    };
+
+    client.startNetworkStatePolling(20);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(client.networkState).toBeNull();
+    expect(sends).toBe(1);
+
+    client.stopNetworkStatePolling();
+    client.startNetworkStatePolling(20);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sends).toBe(1);
+  });
+
+  it("leaves error untouched when a poll fails", async () => {
+    const client = pollingClient();
+    client._sendRPC = () => {}; // a busy device that never answers
+    const errors: ImprovSerialErrorState[] = [];
+    client.addEventListener("error-changed", (ev: CustomEvent) =>
+      errors.push(ev.detail),
+    );
+
+    client.startNetworkStatePolling(20, 10);
+    await vi.advanceTimersByTimeAsync(100);
+    client.stopNetworkStatePolling();
+
+    expect(client.error).toBe(ImprovSerialErrorState.NO_ERROR);
+    expect(errors).toEqual([]);
+    expect(client.networkState).toBeUndefined();
+  });
+
+  it("still reports a failed direct request in error", async () => {
+    const client: any = newClient();
+    client._sendRPC = () => {};
+
+    const request = client.requestNetworkState(10);
+    const rejected = expect(request).rejects.toBe("TIMEOUT");
+    await vi.advanceTimersByTimeAsync(10);
+    await rejected;
+    expect(client.error).toBe(ImprovSerialErrorState.TIMEOUT);
+  });
+
+  it("does not start without a read loop", async () => {
+    const client: any = newClient();
+    let sends = 0;
+    client._sendRPC = () => {
+      sends++;
+    };
+
+    client.startNetworkStatePolling(20);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sends).toBe(0);
+  });
+
+  it("stops on close", async () => {
+    const client = pollingClient();
+    let sends = 0;
+    fakeDevice(client, { result: ["2"], delay: 5, onSend: () => sends++ });
+
+    client.startNetworkStatePolling(20);
+    await vi.advanceTimersByTimeAsync(60);
+    const closed = client.close();
+    await vi.advanceTimersByTimeAsync(0);
+    await closed;
+    const sendsAtClose = sends;
+    await vi.advanceTimersByTimeAsync(200);
+    expect(sends).toBe(sendsAtClose);
   });
 });
