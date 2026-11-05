@@ -207,10 +207,19 @@ export class ImprovSerial extends EventTarget {
     let rpcResult: Promise<string[]>;
     try {
       await new Promise<void>((resolve, reject) => {
-        this.addEventListener("state-changed", () => resolve(), {
-          once: true,
-          signal: abort.signal,
-        });
+        this.addEventListener(
+          "state-changed",
+          () => {
+            // Ignore state changes unrelated to this state request
+            if (
+              this._rpcFeedback?.command ===
+              ImprovSerialRPCCommand.REQUEST_CURRENT_STATE
+            ) {
+              resolve();
+            }
+          },
+          { signal: abort.signal },
+        );
         rpcResult = this._sendRPCWithResponse(
           ImprovSerialRPCCommand.REQUEST_CURRENT_STATE,
           [],
