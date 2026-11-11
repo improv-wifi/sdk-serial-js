@@ -202,6 +202,38 @@ describe("ImprovSerial RPC serialization", () => {
     expect(client._rpcFeedback).toBeUndefined();
   });
 
+  it("doesn't settle another in-flight command on a state change", async () => {
+    const client: any = newClient();
+    const sent: number[] = [];
+    // Only answers requestCurrentState, with a READY state change.
+    client._sendRPC = (command: number) => {
+      sent.push(command);
+      if (command !== 2) return;
+      setTimeout(() => {
+        client.state = ImprovSerialCurrentState.READY;
+        client.dispatchEvent(
+          new CustomEvent("state-changed", { detail: client.state }),
+        );
+      }, 10);
+    };
+
+    const other = client._sendRPCWithResponse(3, [], 100);
+    await sleep(10);
+    const currentState = client.requestCurrentState(1000);
+    await sleep(10);
+    // Unsolicited state change while the other command is in flight.
+    client.state = ImprovSerialCurrentState.READY;
+    client.dispatchEvent(
+      new CustomEvent("state-changed", { detail: client.state }),
+    );
+
+    await expect(other).rejects.toBeDefined(); // times out, not resolved with []
+    await expect(currentState).resolves.toBeUndefined();
+    expect(sent).toEqual([3, 2]);
+    expect(client._rpcFeedback).toBeUndefined();
+    expect(client.error).toBe(ImprovSerialErrorState.TIMEOUT); // from `other` only
+  });
+
   it("clears nextUrl when the device leaves the provisioned state", async () => {
     const client: any = newClient();
     client.state = ImprovSerialCurrentState.PROVISIONED;
