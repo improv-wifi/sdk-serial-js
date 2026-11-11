@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ImprovSerial } from "../src/serial";
-import { ImprovSerialCurrentState, ImprovSerialErrorState } from "../src/const";
+import {
+  ImprovSerialCurrentState,
+  ImprovSerialErrorState,
+  ImprovSerialRPCCommand,
+} from "../src/const";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -361,6 +365,10 @@ describe("ImprovSerial network state polling", () => {
         5,
       );
     };
+    const states: unknown[] = [];
+    client.addEventListener("network-state-changed", (ev: CustomEvent) =>
+      states.push(ev.detail),
+    );
 
     client.startNetworkStatePolling(20);
     await vi.advanceTimersByTimeAsync(100);
@@ -371,6 +379,37 @@ describe("ImprovSerial network state polling", () => {
     client.startNetworkStatePolling(20);
     await vi.advanceTimersByTimeAsync(100);
     expect(sends).toBe(1);
+    expect(states).toEqual([null]);
+  });
+
+  it("does not absorb a queued command's error after a quiet poll", async () => {
+    const client = pollingClient();
+    client._sendRPC = (command: ImprovSerialRPCCommand) => {
+      setTimeout(() => {
+        if (command === ImprovSerialRPCCommand.REQUEST_NETWORK_STATE) {
+          const fb = client._rpcFeedback;
+          if (!fb) return;
+          fb.resolve(["2"]);
+          client._rpcFeedback = undefined;
+        } else {
+          client._setError(ImprovSerialErrorState.UNABLE_TO_CONNECT);
+        }
+      }, 5);
+    };
+    const errors: ImprovSerialErrorState[] = [];
+    client.addEventListener("error-changed", (ev: CustomEvent) =>
+      errors.push(ev.detail),
+    );
+
+    client.startNetworkStatePolling(50);
+    const scan = client.scan(100); // queued behind the in-flight quiet poll
+    const rejected = expect(scan).rejects.toBe("UNABLE_TO_CONNECT");
+    await vi.advanceTimersByTimeAsync(20);
+    await rejected;
+    client.stopNetworkStatePolling();
+
+    expect(client.error).toBe(ImprovSerialErrorState.UNABLE_TO_CONNECT);
+    expect(errors).toEqual([ImprovSerialErrorState.UNABLE_TO_CONNECT]);
   });
 
   it("leaves error untouched when a poll fails", async () => {
