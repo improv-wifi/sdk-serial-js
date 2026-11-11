@@ -380,6 +380,7 @@ describe("ImprovSerial network state polling", () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(sends).toBe(1);
     expect(states).toEqual([null]);
+    expect(client._stopNetworkStatePolling).toBeUndefined(); // no stale handle
   });
 
   it("does not absorb a queued command's error after a quiet poll", async () => {

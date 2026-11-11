@@ -498,6 +498,10 @@ export class ImprovSerial extends EventTarget {
           setTimeout(resolve, interval);
         });
       }
+      // Self-exit (unsupported device): drop the handle so a start can work again.
+      if (active) {
+        this._stopNetworkStatePolling = undefined;
+      }
     })();
   }
 
