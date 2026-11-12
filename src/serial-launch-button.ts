@@ -57,7 +57,7 @@ export class SerialLaunchButton extends HTMLElement {
       this.toggleAttribute("not-supported", true);
       this.renderRoot.innerHTML = !SerialLaunchButton.isAllowed
         ? "<slot name='not-allowed'>You can only use Improv on HTTPS sites or localhost.</slot>"
-        : "<slot name='unsupported'>Your browser does not support serial provisioning. Use Google Chrome or Microsoft Edge.</slot>";
+        : "<slot name='unsupported'>Your browser does not support serial provisioning. Use Google Chrome, Microsoft Edge or Mozilla Firefox.</slot>";
       return;
     }
 
