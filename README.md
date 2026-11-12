@@ -61,7 +61,7 @@ When the dialog is closed, a `closed` event will be fired on both `<improv-wifi-
 
 ## Browser Support
 
-This SDK requires a browser with support for WebSerial. Currently this is supported by Google Chrome, Microsoft Edge and other browsers based on the Blink engine.
+This SDK requires a browser with support for WebSerial. Currently this is supported by Google Chrome, Microsoft Edge, Mozilla Firefox and other browsers based on the Blink engine.
 
 No iOS devices are supported.
 
