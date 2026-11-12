@@ -65,6 +65,8 @@ Releases are cut from GitHub draft releases. The package is built and tested onc
    - pins the draft to that commit,
    - removes any tarball left on the draft by an earlier build,
    - adds a "Do not publish this release yet" warning to the top of the draft.
+
+   The push of the version bump commit itself does not rerun the `Draft release` workflow.
 2. **Build.** When that finishes, `Build release / Build and attach` checks out the pinned commit, checks that `package.json` matches the draft's tag, builds, tests, and attaches `improv-wifi-serial-sdk-<version>.tgz` to the draft. It then removes the warning.
 3. **Publish the draft.** When the warning is gone and the tarball is attached, review the notes and publish the release on GitHub.
 4. **npm.** `Publish / npm` runs in the `npm` environment. It downloads the tarball from the release, verifies it against the immutable release attestation, checks its version, and publishes it to npm with provenance via trusted publishing (no npm token).
