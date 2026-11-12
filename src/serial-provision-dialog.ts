@@ -8,6 +8,8 @@ import {
   svg,
 } from "lit";
 import { customElement, query, property, state } from "lit/decorators.js";
+// Must be imported before any Material Web element is defined.
+import "./util/custom-elements-guard.js";
 import "@material/web/dialog/dialog.js";
 import "@material/web/iconbutton/filled-tonal-icon-button.js";
 import "@material/web/iconbutton/icon-button.js";
