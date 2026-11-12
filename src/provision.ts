@@ -18,7 +18,7 @@ export const startProvisioning = async (button: SerialLaunchButton) => {
     return;
   }
 
-  await port.open({ baudRate: 115200 });
+  await port.open({ baudRate: button.baudRate });
 
   const el = document.createElement("improv-wifi-serial-provision-dialog");
   el.port = port;

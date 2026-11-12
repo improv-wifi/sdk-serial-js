@@ -46,6 +46,20 @@ export class SerialLaunchButton extends HTMLElement {
 
   private renderRoot?: ShadowRoot;
 
+  public static DEFAULT_BAUD_RATE = 115200;
+
+  /** Baud rate used to open the serial port. Set via the `baudRate` attribute. */
+  public get baudRate(): number {
+    const value = Number(this.getAttribute("baudRate"));
+    return Number.isInteger(value) && value > 0
+      ? value
+      : SerialLaunchButton.DEFAULT_BAUD_RATE;
+  }
+
+  public set baudRate(value: number) {
+    this.setAttribute("baudRate", String(value));
+  }
+
   public connectedCallback() {
     if (this.renderRoot) {
       return;
