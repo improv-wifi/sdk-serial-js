@@ -5,13 +5,13 @@
 If you are using a bundler and JavaScript package manager, you can install the SDK via NPM:
 
 ```
-npm install --save improv-wifi-serial-sdk
+npm install --save @improv-wifi/serial-sdk
 ```
 
 And then import it in your code:
 
 ```
-import 'improv-wifi-serial-sdk';
+import '@improv-wifi/serial-sdk';
 ```
 
 ## Usage
@@ -61,7 +61,7 @@ When the dialog is closed, a `closed` event will be fired on both `<improv-wifi-
 
 ## Browser Support
 
-This SDK requires a browser with support for WebSerial. Currently this is supported by Google Chrome, Microsoft Edge and other browsers based on the Blink engine.
+This SDK requires a browser with support for WebSerial. Currently this is supported by Google Chrome, Microsoft Edge, Mozilla Firefox and other browsers based on the Blink engine.
 
 No iOS devices are supported.
 
@@ -70,7 +70,7 @@ No iOS devices are supported.
 The serial SDK can also be used standalone without the UI.
 
 ```ts
-import { ImprovSerial } from "improv-wifi-serial-sdk/dist/serial.ts";
+import { ImprovSerial } from "@improv-wifi/serial-sdk/dist/serial.ts";
 
 const port = await navigator.serial.requestPort();
 await port.open({ baudRate: 115200 });
