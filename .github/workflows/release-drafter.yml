@@ -5,15 +5,17 @@ on:
     branches:
       - main
 
-concurrency:
-  group: release-drafter
-  cancel-in-progress: false
-
 permissions: {}
 
 jobs:
   update_release_draft:
     name: Update draft
+    # Shared with the Attach to draft job in build-release.yml so the two never
+    # modify the draft at the same time. Set on the job (not the workflow) so a
+    # skipped bump-commit run never takes a place in the queue.
+    concurrency:
+      group: release-draft
+      cancel-in-progress: false
     # Skip the push of our own version bump commit. Rerunning here would
     # re-add the build-pending note and delete the tarball after the build
     # for that commit may already have finished.
@@ -26,6 +28,8 @@ jobs:
         with:
           client-id: ${{ vars.IMPROV_GITHUB_APP_CLIENT_ID }}
           private-key: ${{ secrets.IMPROV_GITHUB_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
           permission-contents: write
           permission-pull-requests: read
 
@@ -57,7 +61,7 @@ jobs:
             echo "::error::release-drafter did not output a resolved_version."
             exit 1
           fi
-          npm version --no-git-tag-version --allow-same-version "$RESOLVED_VERSION"
+          npm version --no-git-tag-version --allow-same-version --ignore-scripts "$RESOLVED_VERSION"
           if git diff --quiet -- package.json package-lock.json; then
             echo "Version already $RESOLVED_VERSION, nothing to commit."
           else
