@@ -1,6 +1,6 @@
 {
   "name": "@improv-wifi/serial-sdk",
-  "version": "2.10.0",
+  "version": "3.0.0",
   "description": "Improv Wi-Fi Serial SDK for the browser",
   "main": "dist/serial-launch-button.js",
   "repository": {
@@ -21,6 +21,8 @@
     "@rollup/plugin-terser": "^1.0.0",
     "@rollup/plugin-typescript": "^12.3.0",
     "@types/w3c-web-serial": "^1.0.8",
+    "@vitest/coverage-v8": "^5.1.0",
+    "happy-dom": "^21.0.4",
     "lit": "^3.3.3",
     "prettier": "^3.7.4",
     "rollup": "^4.62.2",
@@ -34,5 +36,8 @@
   },
   "files": [
     "dist"
-  ]
+  ],
+  "overrides": {
+    "compression": "^1.8.2"
+  }
 }
