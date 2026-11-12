@@ -7,7 +7,7 @@ import {
   nothing,
   svg,
 } from "lit";
-import { customElement, query, property, state } from "lit/decorators.js";
+import { query, property, state } from "lit/decorators.js";
 // Must be imported before any Material Web element is defined.
 import "./util/custom-elements-guard.js";
 import "@material/web/dialog/dialog.js";
@@ -139,7 +139,6 @@ function getSignalStrengthClass(rssi: number): string {
   return "signal-weak";
 }
 
-@customElement("improv-wifi-serial-provision-dialog")
 class SerialProvisionDialog extends LitElement {
   @property() public port?: SerialPort;
 
@@ -740,6 +739,13 @@ class SerialProvisionDialog extends LitElement {
       color: #ea4335;
     }
   `;
+}
+
+if (!customElements.get("improv-wifi-serial-provision-dialog")) {
+  customElements.define(
+    "improv-wifi-serial-provision-dialog",
+    SerialProvisionDialog,
+  );
 }
 
 declare global {
