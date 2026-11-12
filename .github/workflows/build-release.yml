@@ -85,6 +85,8 @@ jobs:
     needs: find-draft
     runs-on: ubuntu-latest
     permissions: {}
+    outputs:
+      tarball: ${{ steps.pack.outputs.name }}
     steps:
       - name: Checkout draft commit
         uses: actions/checkout@v7.0.1
@@ -128,13 +130,16 @@ jobs:
             echo "::error::Expected exactly one tarball, found ${#files[@]}."
             exit 1
           fi
-          echo "file=${files[0]}" >> "$GITHUB_OUTPUT"
+          {
+            echo "file=${files[0]}"
+            echo "name=$(basename "${files[0]}")"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload tarball
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: release-tarball
-          path: ${{ runner.temp }}/pack/*.tgz
+          path: ${{ steps.pack.outputs.file }}
+          archive: false
           if-no-files-found: error
           retention-days: 1
 
@@ -155,7 +160,7 @@ jobs:
       - name: Download tarball
         uses: actions/download-artifact@v8.0.2
         with:
-          name: release-tarball
+          name: ${{ needs.build.outputs.tarball }}
           path: ${{ runner.temp }}/pack
 
       - name: Verify tarball
