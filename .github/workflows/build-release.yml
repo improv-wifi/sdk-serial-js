@@ -130,3 +130,27 @@ jobs:
           name=$(basename "$FILE")
           gh api -X POST "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$name" \
             -H "Content-Type: application/gzip" --input "$FILE"
+
+      - name: Clear pending note
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.draft.outputs.id }}
+        run: |
+          if ! release=$(gh api "repos/$REPO/releases/$RELEASE_ID"); then
+            echo "::error::Failed to fetch release $RELEASE_ID."
+            exit 1
+          fi
+          tag=$(jq -r '.tag_name' <<< "$release")
+          case "$tag" in
+            untagged-*)
+              echo "::error::Draft release has placeholder tag $tag; refusing to PATCH."
+              exit 1
+              ;;
+          esac
+          if ! payload=$(jq '{tag_name, name, prerelease, target_commitish, draft: true,
+              body: ((.body // "") | gsub("<!-- build-pending -->[\\s\\S]*?<!-- /build-pending -->\\s*"; ""))}' <<< "$release"); then
+            echo "::error::Failed to build release payload."
+            exit 1
+          fi
+          gh api -X PATCH "repos/$REPO/releases/$RELEASE_ID" --input - <<< "$payload" > /dev/null

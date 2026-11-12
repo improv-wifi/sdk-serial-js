@@ -92,5 +92,23 @@ jobs:
               exit 1
               ;;
           esac
-          jq --arg sha "$SHA" '{tag_name, name, prerelease, draft: true, target_commitish: $sha}' <<< "$release" \
+          jq --arg sha "$SHA" '{tag_name, name, body, prerelease, draft: true, target_commitish: $sha}' <<< "$release" \
             | gh api -X PATCH "repos/$REPO/releases/$RELEASE_ID" --input -
+
+      - name: Remove stale tarball
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.drafter.outputs.id }}
+        run: |
+          if ! assets=$(gh api "repos/$REPO/releases/$RELEASE_ID/assets" --paginate); then
+            echo "::error::Failed to list release assets."
+            exit 1
+          fi
+          if ! old_ids=$(jq -s -r '.[][] | select(.name | endswith(".tgz")) | .id' <<< "$assets"); then
+            echo "::error::Failed to parse release assets."
+            exit 1
+          fi
+          for asset_id in $old_ids; do
+            gh api -X DELETE "repos/$REPO/releases/assets/$asset_id"
+          done

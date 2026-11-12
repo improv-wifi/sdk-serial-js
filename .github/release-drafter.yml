@@ -21,6 +21,12 @@ categories:
         - "new-feature"
   - type: "version-resolver"
     semver-increment: "patch"
+header: |
+  <!-- build-pending -->
+  > [!WARNING]
+  > Do not publish this release yet. The package is still being built and attached to this draft. This note is removed automatically once the tarball is uploaded.
+  <!-- /build-pending -->
+
 template: |
   ## What's Changed
 
