@@ -1,8 +1,26 @@
+name-template: "$RESOLVED_VERSION"
+tag-template: "$RESOLVED_VERSION"
 categories:
   - title: "⬆️ Dependencies"
     collapse-after: 1
-    labels:
-      - "dependencies"
+    when:
+      labels:
+        - "dependencies"
+  - type: "version-resolver"
+    semver-increment: "major"
+    when:
+      labels:
+        - "major"
+        - "breaking-change"
+  - type: "version-resolver"
+    semver-increment: "minor"
+    when:
+      labels:
+        - "minor"
+        - "enhancement"
+        - "new-feature"
+  - type: "version-resolver"
+    semver-increment: "patch"
 template: |
   ## What's Changed
 

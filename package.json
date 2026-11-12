@@ -1,11 +1,17 @@
 {
-  "name": "improv-wifi-serial-sdk",
-  "version": "0.0.0",
+  "name": "@improv-wifi/serial-sdk",
+  "version": "2.10.0",
   "description": "Improv Wi-Fi Serial SDK for the browser",
   "main": "dist/serial-launch-button.js",
-  "repository": "https://github.com/improv-wifi/sdk-serial-js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/improv-wifi/sdk-serial-js.git"
+  },
   "author": "Improv Wi-Fi maintainers",
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "prepublishOnly": "script/build",
     "test": "vitest run"
@@ -25,5 +31,8 @@
   "dependencies": {
     "@material/web": "^2.4.1",
     "tslib": "^2.8.1"
-  }
+  },
+  "files": [
+    "dist"
+  ]
 }
