@@ -14,6 +14,10 @@ permissions: {}
 jobs:
   update_release_draft:
     name: Update draft
+    # Skip the push of our own version bump commit. Rerunning here would
+    # re-add the build-pending note and delete the tarball after the build
+    # for that commit may already have finished.
+    if: ${{ !(startsWith(github.event.head_commit.message, 'Bump version to ') && endsWith(github.event.head_commit.author.name, '[bot]')) }}
     runs-on: ubuntu-latest
     steps:
       - name: Create app token
