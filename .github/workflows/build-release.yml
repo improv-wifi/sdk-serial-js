@@ -13,10 +13,15 @@ concurrency:
 permissions: {}
 
 jobs:
-  build-release:
-    name: Build and attach
+  find-draft:
+    name: Find draft
     if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      id: ${{ steps.draft.outputs.id }}
+      tag: ${{ steps.draft.outputs.tag }}
+      sha: ${{ steps.draft.outputs.sha }}
     steps:
       - name: Create app token
         id: app-token
@@ -58,22 +63,38 @@ jobs:
             echo "::error::Draft target_commitish '$sha' is not a 40-char commit sha."
             exit 1
           fi
+          if ! out=$(gh api "repos/$REPO/compare/main...$sha" --jq .status); then
+            echo "::error::Failed to compare draft commit $sha with main."
+            exit 1
+          fi
+          case "$out" in
+            behind|identical) ;;
+            *)
+              echo "::error::Draft commit $sha is not reachable from main (compare status '$out')."
+              exit 1
+              ;;
+          esac
           {
             echo "id=$id"
             echo "tag=$tag"
             echo "sha=$sha"
           } >> "$GITHUB_OUTPUT"
 
+  build:
+    name: Build
+    needs: find-draft
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
       - name: Checkout draft commit
         uses: actions/checkout@v7.0.1
         with:
-          ref: ${{ steps.draft.outputs.sha }}
-          token: ${{ steps.app-token.outputs.token }}
+          ref: ${{ needs.find-draft.outputs.sha }}
           persist-credentials: false
 
       - name: Check version
         env:
-          TAG: ${{ steps.draft.outputs.tag }}
+          TAG: ${{ needs.find-draft.outputs.tag }}
         run: |
           pkg_version=$(jq -r '.version' package.json)
           tag_version="${TAG#v}"
@@ -109,12 +130,51 @@ jobs:
           fi
           echo "file=${files[0]}" >> "$GITHUB_OUTPUT"
 
+      - name: Upload tarball
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: release-tarball
+          path: ${{ runner.temp }}/pack/*.tgz
+          if-no-files-found: error
+          retention-days: 1
+
+  attach:
+    name: Attach to draft
+    needs: [find-draft, build]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Create app token
+        id: app-token
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.IMPROV_GITHUB_APP_CLIENT_ID }}
+          private-key: ${{ secrets.IMPROV_GITHUB_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Download tarball
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: release-tarball
+          path: ${{ runner.temp }}/pack
+
+      - name: Verify tarball
+        id: verify
+        run: |
+          shopt -s nullglob
+          files=("$RUNNER_TEMP"/pack/*.tgz)
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one tarball, found ${#files[@]}."
+            exit 1
+          fi
+          echo "file=${files[0]}" >> "$GITHUB_OUTPUT"
+
       - name: Attach to draft
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
-          RELEASE_ID: ${{ steps.draft.outputs.id }}
-          FILE: ${{ steps.pack.outputs.file }}
+          RELEASE_ID: ${{ needs.find-draft.outputs.id }}
+          FILE: ${{ steps.verify.outputs.file }}
         run: |
           if ! assets=$(gh api "repos/$REPO/releases/$RELEASE_ID/assets" --paginate); then
             echo "::error::Failed to list release assets."
@@ -135,7 +195,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
-          RELEASE_ID: ${{ steps.draft.outputs.id }}
+          RELEASE_ID: ${{ needs.find-draft.outputs.id }}
         run: |
           if ! release=$(gh api "repos/$REPO/releases/$RELEASE_ID"); then
             echo "::error::Failed to fetch release $RELEASE_ID."
