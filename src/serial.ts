@@ -230,7 +230,14 @@ export class ImprovSerial extends EventTarget {
    * to switch network interfaces) can pass a timeout shorter than the default
    * so each poll settles quickly.
    */
-  public async requestCurrentState(timeout?: number) {
+  public requestCurrentState(timeout?: number) {
+    return this._requestCurrentState(timeout, false);
+  }
+
+  private async _requestCurrentState(
+    timeout: number | undefined,
+    quiet: boolean,
+  ) {
     // Every device reports its state; a provisioned one also returns the next
     // URL. Attach the listener before sending, then wait for the state change;
     // the RPC promise is only used to surface a command error.
@@ -255,6 +262,7 @@ export class ImprovSerial extends EventTarget {
           ImprovSerialRPCCommand.REQUEST_CURRENT_STATE,
           [],
           timeout,
+          quiet,
         );
         rpcResult.catch(reject);
       });
@@ -466,10 +474,10 @@ export class ImprovSerial extends EventTarget {
   }
 
   /**
-   * Poll the device's network state, keeping `networkState` fresh. Idempotent;
-   * stopped by `stopNetworkStatePolling()`, `close()`, a disconnect, or the
-   * device reporting the command unsupported. A failed poll keeps the last
-   * known state, leaves `error` untouched and retries on the next tick.
+   * Poll the device's network state, keeping `networkState` and `state` fresh.
+   * Idempotent; stopped by `stopNetworkStatePolling()`, `close()`, a disconnect,
+   * or the device reporting the command unsupported. A failed poll keeps the
+   * last known state, leaves `error` untouched and retries on the next tick.
    */
   public startNetworkStatePolling(
     interval: number = NETWORK_STATE_POLL_INTERVAL,
@@ -492,6 +500,11 @@ export class ImprovSerial extends EventTarget {
       while (active) {
         try {
           await this._requestNetworkState(timeout, true);
+          if (!active) {
+            break;
+          }
+          // A reboot onto another interface silently changes the Wi-Fi state.
+          await this._requestCurrentState(timeout, true);
         } catch (err) {
           if (this.networkState === null) {
             break;
