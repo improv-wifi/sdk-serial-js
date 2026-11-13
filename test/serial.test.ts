@@ -19,15 +19,26 @@ const newClient = () => new ImprovSerial(fakePort, silentLogger);
 /**
  * Fake the wire so a single-response command resolves `result` shortly after it
  * is sent, mimicking a device that answers. `onSend` runs on every send, so a
- * test can count how many commands are in flight at once.
+ * test can count how many commands are in flight at once. With `state`, a state
+ * request is answered like an unprovisioned device does: a state change only.
  */
 const fakeDevice = (
   client: any,
-  { result = ["ok"], delay = 20, onSend = () => {} }: any = {},
+  { result = ["ok"], delay = 20, onSend = () => {}, state }: any = {},
 ) => {
-  client._sendRPC = () => {
+  client._sendRPC = (command: ImprovSerialRPCCommand) => {
     onSend();
     setTimeout(() => {
+      if (
+        state !== undefined &&
+        command === ImprovSerialRPCCommand.REQUEST_CURRENT_STATE
+      ) {
+        client.state = state;
+        client.dispatchEvent(
+          new CustomEvent("state-changed", { detail: state }),
+        );
+        return;
+      }
       const fb = client._rpcFeedback;
       if (!fb) return;
       "receivedData" in fb ? fb.resolve(fb.receivedData) : fb.resolve(result);
@@ -357,34 +368,60 @@ describe("ImprovSerial network state polling", () => {
   it("polls until stopped", async () => {
     const client = pollingClient();
     let sends = 0;
-    fakeDevice(client, { result: ["2"], delay: 5, onSend: () => sends++ });
+    fakeDevice(client, {
+      result: ["2"],
+      delay: 5,
+      onSend: () => sends++,
+      state: ImprovSerialCurrentState.READY,
+    });
 
     client.startNetworkStatePolling(20);
     client.startNetworkStatePolling(20); // idempotent: must not start a second loop
-    // Polls at 0, 25, 50, 75 and 100ms: each answer takes 5ms, then 20ms of sleep.
+    // Polls at 0, 30, 60 and 90ms: two answers of 5ms each, then 20ms of sleep.
     await vi.advanceTimersByTimeAsync(110);
-    expect(sends).toBe(5);
+    expect(sends).toBe(8);
     expect(client.networkState?.supportsWifi).toBe(true);
 
     client.stopNetworkStatePolling();
     await vi.advanceTimersByTimeAsync(200);
-    expect(sends).toBe(5);
+    expect(sends).toBe(8);
+  });
+
+  it("picks up a Wi-Fi state the device never announced", async () => {
+    const client = pollingClient();
+    client.state = ImprovSerialCurrentState.STOPPED;
+    fakeDevice(client, {
+      result: ["2"],
+      delay: 5,
+      state: ImprovSerialCurrentState.READY,
+    });
+
+    client.startNetworkStatePolling(20);
+    await vi.advanceTimersByTimeAsync(15);
+    client.stopNetworkStatePolling();
+
+    expect(client.state).toBe(ImprovSerialCurrentState.READY);
   });
 
   it("keeps a single poll loop across a stop and start during an in-flight poll", async () => {
     const client = pollingClient();
     let sends = 0;
-    fakeDevice(client, { result: ["2"], delay: 20, onSend: () => sends++ });
+    fakeDevice(client, {
+      result: ["2"],
+      delay: 20,
+      onSend: () => sends++,
+      state: ImprovSerialCurrentState.READY,
+    });
 
     client.startNetworkStatePolling(50);
     await vi.advanceTimersByTimeAsync(10); // first poll is now in flight
     client.stopNetworkStatePolling();
     client.startNetworkStatePolling(50);
 
-    // After the first poll at 0ms, the new loop queues behind it and polls at
-    // 20, 90, 160, 230 and 300ms. A leaked old loop would add more.
-    await vi.advanceTimersByTimeAsync(300);
-    expect(sends).toBe(6);
+    // After the first request at 0ms, the new loop queues behind it and sends
+    // two requests per poll at 20, 110 and 200ms. A leaked old loop would add more.
+    await vi.advanceTimersByTimeAsync(250);
+    expect(sends).toBe(7);
   });
 
   it("does not poll a device that reports the command unsupported", async () => {
@@ -462,6 +499,27 @@ describe("ImprovSerial network state polling", () => {
     expect(client.networkState).toBeUndefined();
   });
 
+  it("leaves error untouched when the Wi-Fi state poll fails", async () => {
+    const client = pollingClient();
+    client._sendRPC = (command: ImprovSerialRPCCommand) => {
+      if (command === ImprovSerialRPCCommand.REQUEST_NETWORK_STATE) {
+        setTimeout(() => client._rpcFeedback?.resolve(["2"]), 5);
+      }
+    };
+    const errors: ImprovSerialErrorState[] = [];
+    client.addEventListener("error-changed", (ev: CustomEvent) =>
+      errors.push(ev.detail),
+    );
+
+    client.startNetworkStatePolling(20, 10);
+    await vi.advanceTimersByTimeAsync(100);
+    client.stopNetworkStatePolling();
+
+    expect(client.error).toBe(ImprovSerialErrorState.NO_ERROR);
+    expect(errors).toEqual([]);
+    expect(client.networkState?.supportsWifi).toBe(true);
+  });
+
   it("still reports a failed direct request in error", async () => {
     const client: any = newClient();
     client._sendRPC = () => {};
@@ -488,7 +546,12 @@ describe("ImprovSerial network state polling", () => {
   it("stops on close", async () => {
     const client = pollingClient();
     let sends = 0;
-    fakeDevice(client, { result: ["2"], delay: 5, onSend: () => sends++ });
+    fakeDevice(client, {
+      result: ["2"],
+      delay: 5,
+      onSend: () => sends++,
+      state: ImprovSerialCurrentState.READY,
+    });
 
     client.startNetworkStatePolling(20);
     await vi.advanceTimersByTimeAsync(60);

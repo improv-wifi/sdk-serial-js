@@ -84,7 +84,7 @@ await improv.initialize();
 
 improv.addEventListener("disconnect", console.log);
 
-// Optional: keeps `improv.networkState` fresh (e.g. an Ethernet link coming up).
+// Optional: keeps `improv.networkState` and `improv.state` fresh (e.g. an Ethernet link coming up).
 improv.startNetworkStatePolling();
 
 console.log({
