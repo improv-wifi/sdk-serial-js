@@ -245,6 +245,29 @@ describe("ImprovSerial RPC serialization", () => {
     expect(client.error).toBe(ImprovSerialErrorState.TIMEOUT); // from `other` only
   });
 
+  it("doesn't settle a state request with a polled one's reply", async () => {
+    const client: any = newClient();
+    let sends = 0;
+    client._sendRPC = () => {
+      sends++;
+      setTimeout(() => {
+        client.state = ImprovSerialCurrentState.READY;
+        client.dispatchEvent(
+          new CustomEvent("state-changed", { detail: client.state }),
+        );
+      }, 10);
+    };
+
+    const polled = client._requestCurrentState(100, true);
+    const direct = client.requestCurrentState(100);
+
+    await expect(direct).resolves.toBeUndefined();
+    expect(sends).toBe(2); // waited for its own reply
+    await polled;
+    expect(client._rpcFeedback).toBeUndefined(); // nothing left to time out
+    expect(client.error).toBe(ImprovSerialErrorState.NO_ERROR);
+  });
+
   it("clears nextUrl when the device leaves the provisioned state", async () => {
     const client: any = newClient();
     client.state = ImprovSerialCurrentState.PROVISIONED;

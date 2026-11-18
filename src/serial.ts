@@ -241,28 +241,27 @@ export class ImprovSerial extends EventTarget {
     // Every device reports its state; a provisioned one also returns the next
     // URL. Attach the listener before sending, then wait for the state change;
     // the RPC promise is only used to surface a command error.
+    const command = ImprovSerialRPCCommand.REQUEST_CURRENT_STATE;
     const abort = new AbortController();
     let rpcResult: Promise<string[]>;
     try {
       await new Promise<void>((resolve, reject) => {
-        this.addEventListener(
-          "state-changed",
-          () => {
-            // Ignore state changes unrelated to this state request
-            if (
-              this._rpcFeedback?.command ===
-              ImprovSerialRPCCommand.REQUEST_CURRENT_STATE
-            ) {
-              resolve();
-            }
-          },
-          { signal: abort.signal },
-        );
-        rpcResult = this._sendRPCWithResponse(
-          ImprovSerialRPCCommand.REQUEST_CURRENT_STATE,
-          [],
-          timeout,
-          quiet,
+        rpcResult = this._enqueueRPC(
+          () =>
+            new Promise<string[]>((resolveRPC, rejectRPC) => {
+              // Not up front: a reply to an earlier state request isn't ours.
+              this.addEventListener("state-changed", () => resolve(), {
+                signal: abort.signal,
+              });
+              this._rpcFeedback = {
+                command,
+                resolve: resolveRPC,
+                reject: rejectRPC,
+                quiet,
+              };
+              this._sendRPC(command, []);
+            }),
+          timeout ?? DEFAULT_RPC_TIMEOUT,
         );
         rpcResult.catch(reject);
       });
@@ -509,7 +508,7 @@ export class ImprovSerial extends EventTarget {
           if (this.networkState === null) {
             break;
           }
-          this.logger.debug(`Failed to fetch network state: ${err}`);
+          this.logger.debug(`Network state poll failed: ${err}`);
         }
         if (!active) {
           break;
