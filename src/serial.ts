@@ -230,31 +230,38 @@ export class ImprovSerial extends EventTarget {
    * to switch network interfaces) can pass a timeout shorter than the default
    * so each poll settles quickly.
    */
-  public async requestCurrentState(timeout?: number) {
+  public requestCurrentState(timeout?: number) {
+    return this._requestCurrentState(timeout, false);
+  }
+
+  private async _requestCurrentState(
+    timeout: number | undefined,
+    quiet: boolean,
+  ) {
     // Every device reports its state; a provisioned one also returns the next
     // URL. Attach the listener before sending, then wait for the state change;
     // the RPC promise is only used to surface a command error.
+    const command = ImprovSerialRPCCommand.REQUEST_CURRENT_STATE;
     const abort = new AbortController();
     let rpcResult: Promise<string[]>;
     try {
       await new Promise<void>((resolve, reject) => {
-        this.addEventListener(
-          "state-changed",
-          () => {
-            // Ignore state changes unrelated to this state request
-            if (
-              this._rpcFeedback?.command ===
-              ImprovSerialRPCCommand.REQUEST_CURRENT_STATE
-            ) {
-              resolve();
-            }
-          },
-          { signal: abort.signal },
-        );
-        rpcResult = this._sendRPCWithResponse(
-          ImprovSerialRPCCommand.REQUEST_CURRENT_STATE,
-          [],
-          timeout,
+        rpcResult = this._enqueueRPC(
+          () =>
+            new Promise<string[]>((resolveRPC, rejectRPC) => {
+              // Not up front: a reply to an earlier state request isn't ours.
+              this.addEventListener("state-changed", () => resolve(), {
+                signal: abort.signal,
+              });
+              this._rpcFeedback = {
+                command,
+                resolve: resolveRPC,
+                reject: rejectRPC,
+                quiet,
+              };
+              this._sendRPC(command, []);
+            }),
+          timeout ?? DEFAULT_RPC_TIMEOUT,
         );
         rpcResult.catch(reject);
       });
@@ -466,10 +473,10 @@ export class ImprovSerial extends EventTarget {
   }
 
   /**
-   * Poll the device's network state, keeping `networkState` fresh. Idempotent;
-   * stopped by `stopNetworkStatePolling()`, `close()`, a disconnect, or the
-   * device reporting the command unsupported. A failed poll keeps the last
-   * known state, leaves `error` untouched and retries on the next tick.
+   * Poll the device's network state, keeping `networkState` and `state` fresh.
+   * Idempotent; stopped by `stopNetworkStatePolling()`, `close()`, a disconnect,
+   * or the device reporting the command unsupported. A failed poll keeps the
+   * last known state, leaves `error` untouched and retries on the next tick.
    */
   public startNetworkStatePolling(
     interval: number = NETWORK_STATE_POLL_INTERVAL,
@@ -492,11 +499,16 @@ export class ImprovSerial extends EventTarget {
       while (active) {
         try {
           await this._requestNetworkState(timeout, true);
+          if (!active) {
+            break;
+          }
+          // A reboot onto another interface silently changes the Wi-Fi state.
+          await this._requestCurrentState(timeout, true);
         } catch (err) {
           if (this.networkState === null) {
             break;
           }
-          this.logger.debug(`Failed to fetch network state: ${err}`);
+          this.logger.debug(`Network state poll failed: ${err}`);
         }
         if (!active) {
           break;
