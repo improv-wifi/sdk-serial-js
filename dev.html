@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Improv Serial Dev</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 16px;
+      }
+      h2 {
+        font-size: 1rem;
+        margin: 24px 0 8px;
+      }
+      fieldset {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 24px;
+        border: 1px solid #8884;
+        border-radius: 4px;
+      }
+      label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      #status span {
+        font-weight: bold;
+      }
+      #log {
+        height: 240px;
+        overflow: auto;
+        margin: 0;
+        padding: 8px;
+        font-size: 12px;
+        background: #8881;
+        border: 1px solid #8884;
+        border-radius: 4px;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Improv Serial Dev</h1>
+    <p id="status">
+      Secure context: <span id="secure"></span>, Web Serial:
+      <span id="serial"></span>
+    </p>
+
+    <h2>Launch button</h2>
+    <improv-wifi-serial-launch-button
+      id="button"
+    ></improv-wifi-serial-launch-button>
+
+    <h2>Theme</h2>
+    <fieldset>
+      <label>
+        Primary
+        <input type="color" id="primary" value="#03a9f4" />
+      </label>
+      <label>
+        On primary
+        <input type="color" id="on-primary" value="#ffffff" />
+      </label>
+      <label>
+        Scheme
+        <select id="scheme">
+          <option value="light dark">System</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
+      <button type="button" id="reset-theme">Reset</button>
+    </fieldset>
+
+    <h2>Event log</h2>
+    <pre id="log"></pre>
+    <button type="button" id="clear-log">Clear</button>
+
+    <script type="module">
+      import "./src/serial-launch-button.ts";
+
+      const $ = (id) => document.getElementById(id);
+      const root = document.documentElement;
+
+      $("secure").textContent = window.isSecureContext ? "yes" : "NO";
+      $("serial").textContent = "serial" in navigator ? "yes" : "NO";
+
+      const log = (msg) => {
+        const el = $("log");
+        el.textContent += `${new Date().toISOString().slice(11, 23)} ${msg}\n`;
+        el.scrollTop = el.scrollHeight;
+      };
+
+      // Improv logs through console; mirror it into the page log.
+      for (const level of ["log", "debug", "error"]) {
+        const original = console[level].bind(console);
+        console[level] = (...args) => {
+          original(...args);
+          log(`[${level}] ${args.map(String).join(" ")}`);
+        };
+      }
+      window.addEventListener("error", (ev) => log(`[uncaught] ${ev.message}`));
+      window.addEventListener("unhandledrejection", (ev) =>
+        log(`[unhandled] ${ev.reason}`),
+      );
+
+      $("button").addEventListener("closed", (ev) =>
+        log(`closed: ${JSON.stringify(ev.detail)}`),
+      );
+
+      const setVar = (name, value) => root.style.setProperty(name, value);
+      $("primary").addEventListener("input", (ev) =>
+        setVar("--improv-primary-color", ev.target.value),
+      );
+      $("on-primary").addEventListener("input", (ev) =>
+        setVar("--improv-on-primary-color", ev.target.value),
+      );
+      $("scheme").addEventListener("change", (ev) =>
+        setVar("color-scheme", ev.target.value),
+      );
+      $("reset-theme").addEventListener("click", () => {
+        root.removeAttribute("style");
+        $("primary").value = "#03a9f4";
+        $("on-primary").value = "#ffffff";
+        $("scheme").value = "light dark";
+      });
+      $("clear-log").addEventListener("click", () => {
+        $("log").textContent = "";
+      });
+
+      log("ready");
+    </script>
+  </body>
+</html>
