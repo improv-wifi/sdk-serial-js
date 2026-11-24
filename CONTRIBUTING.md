@@ -8,10 +8,10 @@ Requirements: Node.js 24 and a desktop browser with Web Serial support (Chrome, 
 
 ```sh
 npm ci
-script/develop
+npm run dev
 ```
 
-`script/develop` compiles TypeScript and bundles with Rollup in watch mode, and serves the repository on port 5002. Open <http://localhost:5002/example.html> to try the launch button against a real device. `localhost` counts as a secure context, so Web Serial works without HTTPS.
+`npm run dev` (also available as `script/develop`) starts a [Vite](https://vite.dev) dev server on port 5002 that serves `src/` directly with live reload, and opens <http://localhost:5002/dev.html>: the launch button with theme controls and an event log, to try against a real device. <http://localhost:5002/example.html> shows the plain slot examples, but it loads the built bundle, so run `script/build` first. `localhost` counts as a secure context, so Web Serial works without HTTPS.
 
 Before opening a pull request, run the same checks as CI:
 
