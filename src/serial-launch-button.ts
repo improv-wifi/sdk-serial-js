@@ -91,4 +91,6 @@ export class SerialLaunchButton extends HTMLElement {
   }
 }
 
-customElements.define("improv-wifi-serial-launch-button", SerialLaunchButton);
+if (!customElements.get("improv-wifi-serial-launch-button")) {
+  customElements.define("improv-wifi-serial-launch-button", SerialLaunchButton);
+}
