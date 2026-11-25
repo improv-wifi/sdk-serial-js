@@ -32,6 +32,12 @@ The SDK will render an error when the connected device does not support Improv. 
 ></improv-wifi-serial-launch-button>
 ```
 
+The serial port is opened with a baud rate of 115200 by default. Use the `baudRate` attribute if your firmware uses a different baud rate:
+
+```html
+<improv-wifi-serial-launch-button baudRate="921600"></improv-wifi-serial-launch-button>
+```
+
 ### Attributes
 
 The following attributes are automatically added to `<improv-wifi-serial-launch-button>` and can be used for styling:

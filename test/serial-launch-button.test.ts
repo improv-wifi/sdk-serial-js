@@ -57,4 +57,27 @@ describe("SerialLaunchButton", () => {
       SerialLaunchButton.isSupported = original;
     }
   });
+
+  it("defaults the baud rate to 115200", () => {
+    const el = render();
+    expect(el.baudRate).toBe(115200);
+  });
+
+  it("reads the baud rate from the baudRate attribute", () => {
+    const el = render();
+    el.setAttribute("baudRate", "921600");
+    expect(el.baudRate).toBe(921600);
+
+    el.baudRate = 460800;
+    expect(el.getAttribute("baudrate")).toBe("460800");
+    expect(el.baudRate).toBe(460800);
+  });
+
+  it("falls back to the default baud rate for invalid values", () => {
+    const el = render();
+    for (const value of ["", "abc", "0", "-9600", "1.5"]) {
+      el.setAttribute("baudRate", value);
+      expect(el.baudRate).toBe(115200);
+    }
+  });
 });
